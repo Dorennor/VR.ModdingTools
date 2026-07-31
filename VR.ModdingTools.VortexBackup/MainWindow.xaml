@@ -167,7 +167,7 @@
                             Width="100"
                             Height="28"
                             Margin="0,0,8,0"
-                            Background="#D16969"
+                            Background="#FFA500"
                             Click="AddCustomFolder_Click"
                             Content="+ Add Custom"
                             Cursor="Hand"
