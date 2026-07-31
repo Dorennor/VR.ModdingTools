@@ -171,6 +171,44 @@ namespace VR.ModdingTools.VortexBackup
             }
         }
 
+        private void DeleteRootFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (RootFoldersListBox.SelectedItem == null)
+            {
+                UpdateStatus("❌ Please select a folder to delete");
+                return;
+            }
+
+            var selectedItem = RootFoldersListBox.SelectedItem.ToString();
+            var folderPath = selectedItem.Replace("📁 ", "").Replace("⭐ ", "");
+
+            // Remove from root folders
+            if (_config.RootFolders.Contains(folderPath))
+            {
+                _config.RootFolders.Remove(folderPath);
+                _configManager.SaveConfig(_config);
+
+                UpdateRootFoldersList();
+                RefreshFolderList();
+
+                UpdateStatus($"✓ Deleted: {Path.GetFileName(folderPath)}");
+                return;
+            }
+
+            // Remove from custom folders
+            if (_config.CustomFolders.Contains(folderPath))
+            {
+                _config.CustomFolders.Remove(folderPath);
+                _configManager.SaveConfig(_config);
+
+                UpdateRootFoldersList();
+                RefreshFolderList();
+
+                UpdateStatus($"✓ Deleted custom: {Path.GetFileName(folderPath)}");
+                return;
+            }
+        }
+
         private void PrevPage_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (_currentPage > 1)

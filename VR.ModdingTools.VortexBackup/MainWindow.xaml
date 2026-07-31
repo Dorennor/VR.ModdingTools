@@ -149,6 +149,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <Button Grid.Column="1"
@@ -165,9 +166,20 @@
                     <Button Grid.Column="2"
                             Width="100"
                             Height="28"
+                            Margin="0,0,8,0"
                             Background="#D16969"
                             Click="AddCustomFolder_Click"
                             Content="+ Add Custom"
+                            Cursor="Hand"
+                            FontWeight="SemiBold"
+                            Foreground="White" />
+
+                    <Button Grid.Column="3"
+                            Width="75"
+                            Height="28"
+                            Background="#D13438"
+                            Click="DeleteRootFolder_Click"
+                            Content="Delete"
                             Cursor="Hand"
                             FontWeight="SemiBold"
                             Foreground="White" />
