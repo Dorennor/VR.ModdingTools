@@ -217,6 +217,8 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
@@ -226,8 +228,17 @@
                                Foreground="#FFFFFF"
                                Text="Select Folders to Backup" />
 
+                    <TextBlock x:Name="FolderCounterTextBlock"
+                               Grid.Column="1"
+                               Margin="20,0,0,0"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="#B4B4B4"
+                               Text="0 / 0 folders" />
+
                     <CheckBox x:Name="SelectAllCheckBox"
-                              Grid.Column="1"
+                              Grid.Column="2"
+                              Margin="15,0,0,0"
                               VerticalAlignment="Center"
                               Click="SelectAllCheckBox_Click"
                               Content="Select All"
@@ -305,17 +316,38 @@
                        Text="Ready" />
         </Border>
 
-        <!--  Backup Button  -->
+        <!--  Backup and Cancel Buttons  -->
         <Border Grid.Row="5" Padding="15,12" Background="#252526">
-            <Button x:Name="BackupButton"
-                    Height="38"
-                    Background="#007ACC"
-                    Click="StartBackup_Click"
-                    Content="Start Backup"
-                    Cursor="Hand"
-                    FontSize="12"
-                    FontWeight="Bold"
-                    Foreground="White" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="BackupButton"
+                        Grid.Column="0"
+                        Height="38"
+                        Background="#007ACC"
+                        Click="StartBackup_Click"
+                        Content="Start Backup"
+                        Cursor="Hand"
+                        FontSize="12"
+                        FontWeight="Bold"
+                        Foreground="White" />
+
+                <Button x:Name="CancelButton"
+                        Grid.Column="1"
+                        Height="38"
+                        Margin="10,0,0,0"
+                        Background="#D13438"
+                        Click="CancelOperation_Click"
+                        Content="Cancel"
+                        Cursor="Hand"
+                        FontSize="12"
+                        FontWeight="Bold"
+                        Foreground="White"
+                        Visibility="Collapsed" />
+            </Grid>
         </Border>
     </Grid>
 </Window>

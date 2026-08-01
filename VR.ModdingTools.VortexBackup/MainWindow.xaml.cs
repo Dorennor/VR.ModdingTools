@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +24,7 @@ namespace VR.ModdingTools.VortexBackup
         private readonly ObservableCollection<string> _rootFoldersList;
 
         private AppConfig _config;
+        private CancellationTokenSource _cancellationTokenSource;
 
         private const int ItemsPerPage = 30;
         private int _currentPage = 1;
@@ -67,12 +69,19 @@ namespace VR.ModdingTools.VortexBackup
 
         private void RefreshFolderList()
         {
+            // Unsubscribe from old folders
+            foreach (var folder in _allFolders)
+                folder.PropertyChanged -= FolderItem_PropertyChanged;
+
             _allFolders.Clear();
 
             var folders = FolderService.GetAllSubFolders(_config.RootFolders, _config.CustomFolders);
 
             foreach (var folder in folders)
+            {
+                folder.PropertyChanged += FolderItem_PropertyChanged;
                 _allFolders.Add(folder);
+            }
 
             _currentPage = 1;
             DisplayCurrentPage();
@@ -85,6 +94,8 @@ namespace VR.ModdingTools.VortexBackup
             if (_allFolders.Count == 0)
             {
                 UpdatePageIndicator();
+                UpdateFolderCounter();
+
                 return;
             }
 
@@ -103,6 +114,7 @@ namespace VR.ModdingTools.VortexBackup
                 _currentPageFolders.Add(_allFolders[i]);
 
             UpdatePageIndicator();
+            UpdateFolderCounter();
         }
 
         private void UpdatePageIndicator()
@@ -112,6 +124,14 @@ namespace VR.ModdingTools.VortexBackup
 
             PrevPageButton.IsEnabled = _currentPage > 1;
             NextPageButton.IsEnabled = _currentPage < totalPages;
+        }
+
+        private void UpdateFolderCounter()
+        {
+            var totalFolders = _allFolders.Count;
+            var checkedFolders = _allFolders.Count(f => f.IsSelected);
+
+            FolderCounterTextBlock.Text = $"{checkedFolders} / {totalFolders} folders";
         }
 
         private void BrowseGoogleDrive_Click(object sender, RoutedEventArgs eventArgs)
@@ -171,7 +191,7 @@ namespace VR.ModdingTools.VortexBackup
             }
         }
 
-        private void DeleteRootFolder_Click(object sender, RoutedEventArgs e)
+        private void DeleteRootFolder_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (RootFoldersListBox.SelectedItem == null)
             {
@@ -245,19 +265,52 @@ namespace VR.ModdingTools.VortexBackup
             DisplayCurrentPage();
         }
 
+        private void FolderItem_PropertyChanged(object sender, PropertyChangedEventArgs eventArgs)
+        {
+            if (eventArgs.PropertyName == nameof(FolderItem.IsSelected))
+            {
+                // Update counter
+                UpdateFolderCounter();
+
+                // If any folder is deselected, uncheck the "Select All" checkbox
+                if (SelectAllCheckBox.IsChecked == true)
+                {
+                    var allSelected = _allFolders.All(f => f.IsSelected);
+
+                    if (!allSelected)
+                        SelectAllCheckBox.IsChecked = false;
+                }
+                else
+                {
+                    // Check if all folders are now selected, then check the "Select All" checkbox
+                    var allSelected = _allFolders.All(f => f.IsSelected);
+
+                    if (allSelected && _allFolders.Count > 0)
+                        SelectAllCheckBox.IsChecked = true;
+                }
+            }
+        }
+
         private async void StartBackup_Click(object sender, RoutedEventArgs eventArgs)
         {
-            if (string.IsNullOrEmpty(_config.GoogleDrivePath))
+            // Sync Google Drive path from textbox to config
+            var googleDrivePath = GoogleDrivePathTextBox.Text?.Trim();
+
+            if (string.IsNullOrEmpty(googleDrivePath))
             {
                 UpdateStatus("❌ Error: Set Google Drive path first");
                 return;
             }
 
-            if (!Directory.Exists(_config.GoogleDrivePath))
+            if (!Directory.Exists(googleDrivePath))
             {
                 UpdateStatus("❌ Error: Google Drive path doesn't exist");
                 return;
             }
+
+            // Update config with the current textbox value
+            _config.GoogleDrivePath = googleDrivePath;
+            _configManager.SaveConfig(_config);
 
             var selectedFolders = _allFolders.Where(f => f.IsSelected).Select(f => f.FullPath).ToList();
 
@@ -268,14 +321,16 @@ namespace VR.ModdingTools.VortexBackup
             }
 
             BackupButton.IsEnabled = false;
+            CancelButton.Visibility = Visibility.Visible;
 
             UpdateStatus($"⏳ Backing up {selectedFolders.Count} folder(s)...");
 
             var progress = new Progress<string>(msg => UpdateStatus(msg));
+            _cancellationTokenSource = new CancellationTokenSource();
 
             try
             {
-                var result = await _backupService.BackupFoldersAsync(selectedFolders, _config.GoogleDrivePath, progress);
+                var result = await _backupService.BackupFoldersAsync(selectedFolders, googleDrivePath, progress, _cancellationTokenSource.Token);
 
                 if (result.HasErrors && result.SuccessfulFolders.Count == 0)
                 {
@@ -292,8 +347,13 @@ namespace VR.ModdingTools.VortexBackup
                     foreach (var folder in _allFolders)
                         folder.IsSelected = false;
 
+                    SelectAllCheckBox.IsChecked = false;
                     DisplayCurrentPage();
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                UpdateStatus("⛔ Backup cancelled by user");
             }
             catch (Exception ex)
             {
@@ -302,12 +362,21 @@ namespace VR.ModdingTools.VortexBackup
             finally
             {
                 BackupButton.IsEnabled = true;
+                CancelButton.Visibility = Visibility.Collapsed;
+
+                _cancellationTokenSource?.Dispose();
             }
         }
 
         private void UpdateStatus(string message)
         {
             StatusTextBlock.Text = message;
+        }
+
+        private void CancelOperation_Click(object sender, RoutedEventArgs eventArgs)
+        {
+            _cancellationTokenSource?.Cancel();
+            UpdateStatus("⏳ Cancelling operation...");
         }
 
         private void MinimizeButton_Click(object sender, RoutedEventArgs eventArgs)
