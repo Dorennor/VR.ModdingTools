@@ -1,44 +1,31 @@
 @echo off
-setlocal enabledelayedexpansion
+REM Simple desktop shortcut creator for VortexBackupTool
 
-REM Check if VortexBackupTool.exe exists in current directory
 if not exist "VortexBackupTool.exe" (
-	echo Error: VortexBackupTool.exe not found in current directory
+	echo Error: VortexBackupTool.exe not found
 	pause
 	exit /b 1
 )
 
-REM Get current directory
-set SCRIPT_DIR=%cd%
-set EXE_PATH=!SCRIPT_DIR!\VortexBackupTool.exe
-set DESKTOP_PATH=%USERPROFILE%\Desktop
-set SHORTCUT_PATH=!DESKTOP_PATH!\VortexBackupTool.lnk
-
-REM Create VBScript in temp file
-set VBSCRIPT=%TEMP%\CreateShortcut_temp.vbs
+REM Create VBScript content directly
 (
-echo Set oWS = WScript.CreateObject("WScript.Shell"^)
-echo Set oLink = oWS.CreateShortcut("!SHORTCUT_PATH!"^)
-echo oLink.TargetPath = "!EXE_PATH!"
-echo oLink.WorkingDirectory = "!SCRIPT_DIR!"
-echo oLink.Description = "Vortex Backup Tool"
-echo oLink.Save
-) > "!VBSCRIPT!"
+echo Set shell = CreateObject("WScript.Shell"^)
+echo Set fso = CreateObject("Scripting.FileSystemObject"^)
+echo exePath = fso.GetAbsolutePathName("VortexBackupTool.exe"^)
+echo deskPath = shell.SpecialFolders("Desktop"^)
+echo lnkPath = deskPath ^& "\VortexBackupTool.lnk"
+echo Set link = shell.CreateShortcut(lnkPath^)
+echo link.TargetPath = exePath
+echo link.WorkingDirectory = fso.GetParentFolderName(exePath^)
+echo link.Description = "Vortex Backup Tool"
+echo link.Save
+echo WScript.Echo "Done"
+) > "%temp%\shortcut.vbs"
 
-REM Run VBScript
-cscript.exe "!VBSCRIPT!" //nologo
+cscript.exe "%temp%\shortcut.vbs" //nologo
+del "%temp%\shortcut.vbs" /q 2>nul
 
-REM Clean up temp file
-del "!VBSCRIPT!" /q 2>nul
-
-echo.
-if exist "!SHORTCUT_PATH!" (
-	echo Success! Desktop shortcut created
-	echo Location: !DESKTOP_PATH!\VortexBackupTool.lnk
-) else (
-	echo Error: Failed to create shortcut
-)
-echo.
+echo Shortcut created on Desktop
 pause
-endlocal
+
 
