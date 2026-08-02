@@ -8,6 +8,7 @@ using System.Windows.Media;
 
 using Microsoft.Win32;
 
+using VR.ModdingTools.VortexBackup.Helpers;
 using VR.ModdingTools.VortexBackup.Models;
 using VR.ModdingTools.VortexBackup.Services;
 
@@ -16,8 +17,6 @@ namespace VR.ModdingTools.VortexBackup
     public partial class MainWindow : Window
     {
         private readonly ConfigManager _configManager;
-        private readonly FolderService _folderService;
-        private readonly BackupService _backupService;
 
         private readonly ObservableCollection<FolderItem> _allFolders;
         private readonly ObservableCollection<FolderItem> _currentPageFolders;
@@ -34,12 +33,10 @@ namespace VR.ModdingTools.VortexBackup
             InitializeComponent();
 
             _configManager = new ConfigManager();
-            _folderService = new FolderService();
-            _backupService = new BackupService();
 
-            _allFolders = new ObservableCollection<FolderItem>();
-            _currentPageFolders = new ObservableCollection<FolderItem>();
-            _rootFoldersList = new ObservableCollection<string>();
+            _allFolders = [];
+            _currentPageFolders = [];
+            _rootFoldersList = [];
 
             FoldersListBox.ItemsSource = _currentPageFolders;
             RootFoldersListBox.ItemsSource = _rootFoldersList;
@@ -75,7 +72,7 @@ namespace VR.ModdingTools.VortexBackup
 
             _allFolders.Clear();
 
-            var folders = FolderService.GetAllSubFolders(_config.RootFolders, _config.CustomFolders);
+            var folders = FolderHelper.GetAllSubFolders(_config.RootFolders, _config.CustomFolders, _config.IgnoredFolders);
 
             foreach (var folder in folders)
             {
@@ -330,7 +327,7 @@ namespace VR.ModdingTools.VortexBackup
 
             try
             {
-                var result = await _backupService.BackupFoldersAsync(selectedFolders, googleDrivePath, progress, _cancellationTokenSource.Token);
+                var result = await BackupHelper.BackupFoldersAsync(selectedFolders, googleDrivePath, progress, _cancellationTokenSource.Token);
 
                 if (result.HasErrors && result.SuccessfulFolders.Count == 0)
                 {

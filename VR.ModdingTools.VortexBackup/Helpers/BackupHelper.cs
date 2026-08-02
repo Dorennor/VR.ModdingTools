@@ -1,19 +1,19 @@
 using System.IO;
 using System.IO.Compression;
 
-namespace VR.ModdingTools.VortexBackup.Services
+namespace VR.ModdingTools.VortexBackup.Helpers
 {
     /// <summary>
     /// Service for compression and backup operations
     /// </summary>
-    public class BackupService
+    public static class BackupHelper
     {
         /// <summary>
         /// Compresses selected folders and moves them to the Google Drive backup folder
         /// The archive will include the parent folder itself in the archive structure
         /// Uses parallel processing for faster backup of multiple folders
         /// </summary>
-        public async Task<BackupResult> BackupFoldersAsync(List<string> folderPaths, string googleDrivePath, IProgress<string> progress, CancellationToken cancellationToken = default)
+        public static async Task<BackupResult> BackupFoldersAsync(List<string> folderPaths, string googleDrivePath, IProgress<string> progress, CancellationToken cancellationToken = default)
         {
             var result = new BackupResult();
             var lockObj = new object();
@@ -111,20 +111,12 @@ namespace VR.ModdingTools.VortexBackup.Services
         /// Recursively adds a folder and all its contents to a zip archive
         /// Optimized for speed by caching paths and using efficient file enumeration
         /// </summary>
-        private void AddFolderToZip(ZipArchive zipArchive, string folderPath, string basePath, CancellationToken cancellationToken = default)
+        private static void AddFolderToZip(ZipArchive zipArchive, string folderPath, string basePath, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var folderInfo = new DirectoryInfo(folderPath);
             var relativePath = Path.GetRelativePath(basePath, folderPath);
-
-            // Use EnumerationOptions to improve file enumeration performance
-            var enumerationOptions = new EnumerationOptions
-            {
-                RecurseSubdirectories = false,
-                IgnoreInaccessible = true,
-                ReturnSpecialDirectories = false
-            };
 
             // Add files from current directory with error handling
             FileInfo[] files;
@@ -181,8 +173,8 @@ namespace VR.ModdingTools.VortexBackup.Services
     /// </summary>
     public class BackupResult
     {
-        public List<string> SuccessfulFolders { get; } = new();
-        public List<(string FolderPath, string Error)> FailedFolders { get; } = new();
+        public List<string> SuccessfulFolders { get; } = [];
+        public List<(string FolderPath, string Error)> FailedFolders { get; } = [];
         public bool HasErrors { get; set; }
         public string ErrorMessage { get; set; } = string.Empty;
     }

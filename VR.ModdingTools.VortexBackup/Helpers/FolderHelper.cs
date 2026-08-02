@@ -3,17 +3,17 @@ using System.IO;
 
 using VR.ModdingTools.VortexBackup.Models;
 
-namespace VR.ModdingTools.VortexBackup.Services
+namespace VR.ModdingTools.VortexBackup.Helpers
 {
     /// <summary>
     /// Service for folder enumeration and management
     /// </summary>
-    public class FolderService
+    public static class FolderHelper
     {
         /// <summary>
         /// Gets all direct subfolders of a given root folder (non-recursive)
         /// </summary>
-        public static List<FolderItem> GetSubFolders(string rootPath)
+        public static List<FolderItem> GetSubFolders(string rootPath, List<string> ignored = null)
         {
             var subfolders = new List<FolderItem>();
 
@@ -29,6 +29,16 @@ namespace VR.ModdingTools.VortexBackup.Services
                     try
                     {
                         var dirInfo = new DirectoryInfo(dirPath);
+
+                        // Skip ignored folder names or paths
+                        if (ignored != null && ignored.Count > 0)
+                        {
+                            var skip = ignored.Any(ignore => !string.IsNullOrWhiteSpace(ignore) &&
+                                                              (dirInfo.Name.Equals(ignore, StringComparison.InvariantCultureIgnoreCase) || dirInfo.FullName.Contains(ignore, StringComparison.InvariantCultureIgnoreCase)));
+
+                            if (skip)
+                                continue;
+                        }
 
                         subfolders.Add(new FolderItem
                         {
@@ -55,14 +65,14 @@ namespace VR.ModdingTools.VortexBackup.Services
         /// <summary>
         /// Gets all subfolders from multiple root folders combined
         /// </summary>
-        public static List<FolderItem> GetAllSubFolders(List<string> rootFolders, List<string> customFolders)
+        public static List<FolderItem> GetAllSubFolders(List<string> rootFolders, List<string> customFolders, List<string> ignored = null)
         {
             var allFolders = new List<FolderItem>();
 
             // Add subfolders from root folders
             foreach (var rootPath in rootFolders)
             {
-                var subfolders = GetSubFolders(rootPath);
+                var subfolders = GetSubFolders(rootPath, ignored);
                 allFolders.AddRange(subfolders);
             }
 
@@ -97,7 +107,7 @@ namespace VR.ModdingTools.VortexBackup.Services
         /// <summary>
         /// Validates if a folder path exists and is accessible
         /// </summary>
-        public bool IsFolderValid(string folderPath)
+        public static bool IsFolderValid(string folderPath)
         {
             try
             {
