@@ -1,7 +1,8 @@
-namespace UniversalBackupTool.Models;
-
-public record FileMetadata(
-    string RelativePath,
-    long SizeBytes,
-    DateTime LastWriteTimeUtc,
-    bool IsSymlink);
+namespace UniversalBackupTool.Model.Models.Snapshots
+{
+    public record FileMetadata(
+        string RelativePath,
+        long SizeBytes,
+        DateTime LastWriteTimeUtc,
+        bool IsSymlink);
+}

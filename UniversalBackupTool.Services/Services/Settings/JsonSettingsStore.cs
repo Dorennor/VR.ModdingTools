@@ -1,55 +1,56 @@
 using System.Text.Json;
 
-using UniversalBackupTool.Interfaces;
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Interface.Interfaces.Settings;
+using UniversalBackupTool.Model.Models.Settings;
 
-namespace UniversalBackupTool.Services;
-
-public sealed class JsonSettingsStore : ISettingsStore
+namespace UniversalBackupTool.Service.Services.Settings
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    public sealed class JsonSettingsStore : ISettingsStore
     {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
-
-    public async Task<AppSettings> LoadAsync(string filePath, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("Settings file path cannot be empty.", nameof(filePath));
-
-        if (!File.Exists(filePath))
+        private static readonly JsonSerializerOptions JsonOptions = new()
         {
-            var defaultSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
-            await SaveAsync(filePath, defaultSettings, cancellationToken);
-            return defaultSettings;
+            WriteIndented = true,
+            PropertyNameCaseInsensitive = true
+        };
+
+        public async Task<AppSettings> LoadAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("Settings file path cannot be empty.", nameof(filePath));
+
+            if (!File.Exists(filePath))
+            {
+                var defaultSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
+                await SaveAsync(filePath, defaultSettings, cancellationToken);
+                return defaultSettings;
+            }
+
+            await using var stream = File.OpenRead(filePath);
+            var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
+
+            if (settings is null)
+            {
+                var fallbackSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
+                await SaveAsync(filePath, fallbackSettings, cancellationToken);
+                return fallbackSettings;
+            }
+
+            return settings;
         }
 
-        await using var stream = File.OpenRead(filePath);
-        var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
-
-        if (settings is null)
+        public async Task SaveAsync(string filePath, AppSettings settings, CancellationToken cancellationToken = default)
         {
-            var fallbackSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
-            await SaveAsync(filePath, fallbackSettings, cancellationToken);
-            return fallbackSettings;
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("Settings file path cannot be empty.", nameof(filePath));
+
+            var directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await using var stream = File.Create(filePath);
+            await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
         }
-
-        return settings;
-    }
-
-    public async Task SaveAsync(string filePath, AppSettings settings, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("Settings file path cannot be empty.", nameof(filePath));
-
-        var directory = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        await using var stream = File.Create(filePath);
-        await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
     }
 }

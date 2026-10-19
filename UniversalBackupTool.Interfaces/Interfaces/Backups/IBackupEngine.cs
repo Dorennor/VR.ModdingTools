@@ -1,6 +1,6 @@
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Model.Models.Settings;
 
-namespace UniversalBackupTool.Interfaces;
+namespace UniversalBackupTool.Interface.Interfaces.Backups;
 
 public interface IBackupEngine
 {

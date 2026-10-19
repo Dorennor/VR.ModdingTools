@@ -1,41 +1,42 @@
 using System.Text.Json;
 
-using UniversalBackupTool.Interfaces;
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Interface.Interfaces.Jobs;
+using UniversalBackupTool.Model.Models.Jobs;
 
-namespace UniversalBackupTool.Services;
-
-public sealed class BackupJobStateService : IBackupJobStateService
+namespace UniversalBackupTool.Service.Services.Jobs
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
-
-    public async Task SaveAsync(ActiveBackupJob activeBackupJob, CancellationToken cancellationToken = default)
+    public sealed class BackupJobStateService : IBackupJobStateService
     {
-        ArgumentNullException.ThrowIfNull(activeBackupJob);
+        private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 
-        var filePath = Path.Combine(AppContext.BaseDirectory, "Temp", "active_backup_job.json");
-        var directory = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
+        public async Task SaveAsync(ActiveBackupJob activeBackupJob, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(activeBackupJob);
 
-        await using var stream = File.Create(filePath);
-        await JsonSerializer.SerializeAsync(stream, activeBackupJob, JsonOptions, cancellationToken);
-    }
+            var filePath = Path.Combine(AppContext.BaseDirectory, "Temp", "active_backup_job.json");
+            var directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
 
-    public async Task<ActiveBackupJob?> LoadAsync(string filePath, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
-            return null;
+            await using var stream = File.Create(filePath);
+            await JsonSerializer.SerializeAsync(stream, activeBackupJob, JsonOptions, cancellationToken);
+        }
 
-        await using var stream = File.OpenRead(filePath);
-        return await JsonSerializer.DeserializeAsync<ActiveBackupJob>(stream, JsonOptions, cancellationToken);
-    }
+        public async Task<ActiveBackupJob?> LoadAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                return null;
 
-    public Task DeleteAsync(string filePath, CancellationToken cancellationToken = default)
-    {
-        if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
-            File.Delete(filePath);
+            await using var stream = File.OpenRead(filePath);
+            return await JsonSerializer.DeserializeAsync<ActiveBackupJob>(stream, JsonOptions, cancellationToken);
+        }
 
-        return Task.CompletedTask;
+        public Task DeleteAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                File.Delete(filePath);
+
+            return Task.CompletedTask;
+        }
     }
 }

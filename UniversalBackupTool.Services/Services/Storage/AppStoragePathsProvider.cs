@@ -1,20 +1,21 @@
-using UniversalBackupTool.Interfaces;
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Interfaces.Storage;
+using UniversalBackupTool.Model.Models.Storage;
 
-namespace UniversalBackupTool.Services;
-
-public sealed class AppStoragePathsProvider : IAppStoragePathsProvider
+namespace UniversalBackupTool.Service.Services.Storage
 {
-    private readonly AppStoragePaths _paths;
-
-    public AppStoragePathsProvider()  : this(AppContext.BaseDirectory)
+    public sealed class AppStoragePathsProvider : IAppStoragePathsProvider
     {
-    }
+        private readonly AppStoragePaths _paths;
 
-    public AppStoragePathsProvider(string baseDirectory)
-    {
-        _paths = new AppStoragePaths(baseDirectory);
-    }
+        public AppStoragePathsProvider() : this(AppContext.BaseDirectory)
+        {
+        }
 
-    public AppStoragePaths GetPaths() => _paths;
+        public AppStoragePathsProvider(string baseDirectory)
+        {
+            _paths = new AppStoragePaths(baseDirectory);
+        }
+
+        public AppStoragePaths GetPaths() => _paths;
+    }
 }

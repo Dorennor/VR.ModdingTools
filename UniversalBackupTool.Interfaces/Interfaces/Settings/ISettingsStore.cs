@@ -1,10 +1,11 @@
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Model.Models.Settings;
 
-namespace UniversalBackupTool.Interfaces;
-
-public interface ISettingsStore
+namespace UniversalBackupTool.Interface.Interfaces.Settings
 {
-    Task<AppSettings> LoadAsync(string filePath, CancellationToken cancellationToken = default);
+    public interface ISettingsStore
+    {
+        Task<AppSettings> LoadAsync(string filePath, CancellationToken cancellationToken = default);
 
-    Task SaveAsync(string filePath, AppSettings settings, CancellationToken cancellationToken = default);
+        Task SaveAsync(string filePath, AppSettings settings, CancellationToken cancellationToken = default);
+    }
 }

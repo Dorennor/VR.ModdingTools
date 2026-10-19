@@ -1,8 +1,9 @@
-using UniversalBackupTool.Models;
+using UniversalBackupTool.Model.Models.Storage;
 
-namespace UniversalBackupTool.Interfaces;
-
-public interface IAppStoragePathsProvider
+namespace UniversalBackupTool.Interfaces.Storage
 {
-    AppStoragePaths GetPaths();
+    public interface IAppStoragePathsProvider
+    {
+        AppStoragePaths GetPaths();
+    }
 }
