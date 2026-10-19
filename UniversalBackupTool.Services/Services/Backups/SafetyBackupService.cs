@@ -15,10 +15,7 @@ namespace UniversalBackupTool.Services.Backups
             _appStoragePathsProvider = appStoragePathsProvider ?? throw new ArgumentNullException(nameof(appStoragePathsProvider));
         }
 
-        public async Task<string> CreateSafetyBackupAsync(
-            string sourceRootPath,
-            string? archiveNamePrefix = null,
-            CancellationToken cancellationToken = default)
+        public async Task<string> CreateSafetyBackupAsync(string sourceRootPath, string? archiveNamePrefix = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(sourceRootPath))
                 throw new ArgumentException("Source root path cannot be empty.", nameof(sourceRootPath));
@@ -37,6 +34,7 @@ namespace UniversalBackupTool.Services.Backups
             using var zipArchive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: false);
 
             var files = Directory.EnumerateFiles(sourceRootPath, "*", SearchOption.AllDirectories);
+
             foreach (var file in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -46,6 +44,7 @@ namespace UniversalBackupTool.Services.Backups
 
                 await using var inputStream = File.OpenRead(file);
                 await using var outputStream = entry.Open();
+
                 await inputStream.CopyToAsync(outputStream, cancellationToken);
             }
 
@@ -58,6 +57,7 @@ namespace UniversalBackupTool.Services.Backups
 
             var paths = _appStoragePathsProvider.GetPaths();
             var directory = new DirectoryInfo(paths.SafetyBackupsDirectory);
+
             if (!directory.Exists)
                 return;
 
@@ -69,9 +69,7 @@ namespace UniversalBackupTool.Services.Backups
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (file.LastWriteTimeUtc < cutoff)
-                {
                     file.Delete();
-                }
             }
 
             await Task.CompletedTask;

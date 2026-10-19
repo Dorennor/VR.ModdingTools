@@ -18,11 +18,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             _fileSystemProvider = fileSystemProvider ?? throw new ArgumentNullException(nameof(fileSystemProvider));
         }
 
-        public async Task<string> CreateBackupArchiveAsync(
-            string sourceRootPath,
-            string archivePath,
-            AppSettings settings,
-            CancellationToken cancellationToken = default)
+        public async Task<string> CreateBackupArchiveAsync(string sourceRootPath, string archivePath, AppSettings settings, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(settings);
 
@@ -48,17 +44,14 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 await using var inputStream = File.OpenRead(filePath);
                 await using var outputStream = entry.Open();
+
                 await inputStream.CopyToAsync(outputStream, cancellationToken);
             }
 
             return archivePath;
         }
 
-        public Task<string> ResumeBackupArchiveAsync(
-            string archivePath,
-            string sourceRootPath,
-            AppSettings settings,
-            CancellationToken cancellationToken = default)
+        public Task<string> ResumeBackupArchiveAsync(string archivePath, string sourceRootPath, AppSettings settings, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(archivePath))
                 throw new ArgumentException("Archive path cannot be empty.", nameof(archivePath));
@@ -66,22 +59,24 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (!File.Exists(archivePath))
                 return CreateBackupArchiveAsync(sourceRootPath, archivePath, settings, cancellationToken);
 
-            var files = Directory.Exists(sourceRootPath)
-                ? Directory.EnumerateFiles(sourceRootPath, "*", SearchOption.AllDirectories).ToList()
-                : new List<string>();
+            var files = Directory.Exists(sourceRootPath) ? Directory.EnumerateFiles(sourceRootPath, "*", SearchOption.AllDirectories).ToList() : [];
 
             using var zipArchive = ZipFile.Open(archivePath, ZipArchiveMode.Update);
+
             foreach (var filePath in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var relativePath = _fileSystemProvider.GetRelativePath(sourceRootPath, filePath);
+
                 if (zipArchive.Entries.Any(entry => string.Equals(entry.FullName.Replace('\\', '/'), relativePath, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
                 var entry = zipArchive.CreateEntry(relativePath, GetCompressionLevel(filePath, settings));
+
                 using var inputStream = File.OpenRead(filePath);
                 using var outputStream = entry.Open();
+
                 inputStream.CopyTo(outputStream);
             }
 

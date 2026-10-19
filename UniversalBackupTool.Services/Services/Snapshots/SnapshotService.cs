@@ -33,6 +33,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
 
                 var relativePath = _fileSystemProvider.GetRelativePath(rootPath, filePath);
                 var info = new FileInfo(filePath);
+
                 dictionary[relativePath] = new FileMetadata(
                     RelativePath: relativePath,
                     SizeBytes: info.Length,
@@ -47,10 +48,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         {
             ArgumentNullException.ThrowIfNull(baselineSnapshot);
 
-            var currentSnapshot = CreateSnapshotAsync(baselineSnapshot.ProfileId, rootPath, cancellationToken)
-                .GetAwaiter()
-                .GetResult();
-
+            var currentSnapshot = CreateSnapshotAsync(baselineSnapshot.ProfileId, rootPath, cancellationToken).GetAwaiter().GetResult();
             var changes = new Dictionary<string, FileMetadata>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var current in currentSnapshot.Files)
@@ -64,9 +62,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                 }
 
                 if (baselineFile.SizeBytes != current.Value.SizeBytes || baselineFile.LastWriteTimeUtc != current.Value.LastWriteTimeUtc)
-                {
                     changes[current.Key] = current.Value;
-                }
             }
 
             foreach (var baseline in baselineSnapshot.Files)
@@ -74,9 +70,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!currentSnapshot.Files.ContainsKey(baseline.Key))
-                {
                     changes[baseline.Key] = baseline.Value;
-                }
             }
 
             return Task.FromResult(changes);
@@ -93,15 +87,15 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             await _safetyBackupService.CreateSafetyBackupAsync(rootPath, "pre-purge", cancellationToken);
 
             var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
+
             foreach (var filePath in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var relativePath = _fileSystemProvider.GetRelativePath(rootPath, filePath);
+
                 if (!baselineSnapshot.Files.ContainsKey(relativePath))
-                {
                     await _fileSystemProvider.DeleteFileAsync(filePath, cancellationToken);
-                }
             }
         }
     }

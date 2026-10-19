@@ -22,6 +22,7 @@ namespace UniversalBackupTool.Service.Services.Settings
             {
                 var defaultSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
                 await SaveAsync(filePath, defaultSettings, cancellationToken);
+
                 return defaultSettings;
             }
 
@@ -32,6 +33,7 @@ namespace UniversalBackupTool.Service.Services.Settings
             {
                 var fallbackSettings = AppSettings.Default(Path.Combine(AppContext.BaseDirectory, "Backups"));
                 await SaveAsync(filePath, fallbackSettings, cancellationToken);
+
                 return fallbackSettings;
             }
 
@@ -44,10 +46,9 @@ namespace UniversalBackupTool.Service.Services.Settings
                 throw new ArgumentException("Settings file path cannot be empty.", nameof(filePath));
 
             var directory = Path.GetDirectoryName(filePath);
+
             if (!string.IsNullOrEmpty(directory))
-            {
                 Directory.CreateDirectory(directory);
-            }
 
             await using var stream = File.Create(filePath);
             await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);

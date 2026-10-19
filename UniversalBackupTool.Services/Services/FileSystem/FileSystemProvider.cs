@@ -20,11 +20,9 @@ namespace UniversalBackupTool.Services
                 throw new ArgumentException("Root path cannot be empty.", nameof(rootPath));
 
             if (!Directory.Exists(rootPath))
-                return Task.FromResult<IEnumerable<string>>(Array.Empty<string>());
+                return Task.FromResult<IEnumerable<string>>([]);
 
-            var files = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
-                .Where(file => !IsSymlink(file))
-                .ToList();
+            var files = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories).Where(file => !IsSymlink(file)).ToList();
 
             return Task.FromResult<IEnumerable<string>>(files);
         }
@@ -38,6 +36,7 @@ namespace UniversalBackupTool.Services
                 return string.Empty;
 
             var relative = Path.GetRelativePath(fullRoot, fullFile);
+
             return relative.Replace('\\', '/');
         }
 
@@ -66,6 +65,7 @@ namespace UniversalBackupTool.Services
                 return Path.GetFullPath(path);
 
             var linkTarget = File.ResolveLinkTarget(path, returnFinalTarget: true);
+
             return linkTarget is not null ? linkTarget.FullName : Path.GetFullPath(path);
         }
 

@@ -15,10 +15,12 @@ namespace UniversalBackupTool.Service.Services.Jobs
 
             var filePath = Path.Combine(AppContext.BaseDirectory, "Temp", "active_backup_job.json");
             var directory = Path.GetDirectoryName(filePath);
+
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
             await using var stream = File.Create(filePath);
+
             await JsonSerializer.SerializeAsync(stream, activeBackupJob, JsonOptions, cancellationToken);
         }
 
@@ -28,6 +30,7 @@ namespace UniversalBackupTool.Service.Services.Jobs
                 return null;
 
             await using var stream = File.OpenRead(filePath);
+
             return await JsonSerializer.DeserializeAsync<ActiveBackupJob>(stream, JsonOptions, cancellationToken);
         }
 
