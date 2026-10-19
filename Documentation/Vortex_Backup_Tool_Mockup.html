@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vortex Backup Tool - Wpf UI Mockup</title>
+    <style>
+        :root {
+            --bg-base: #202020;
+            --bg-nav: #282828;
+            --bg-card: #2D2D2D;
+            --text-main: #FFFFFF;
+            --text-muted: #A0A0A0;
+            --accent: #60CDFF;
+            --accent-hover: #4CC2FF;
+            --danger: #FF99A4;
+            --danger-bg: #660000;
+            --border: #3D3D3D;
+            --control-bg: #1C1C1C;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 260px;
+            background-color: var(--bg-nav);
+            padding: 20px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-right: 1px solid var(--border);
+        }
+
+        .app-title {
+            font-weight: 600;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+
+        .nav-item {
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: 0.15s;
+            font-size: 14px;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .nav-item.active {
+            background-color: rgba(96, 205, 255, 0.1);
+            position: relative;
+            font-weight: 600;
+        }
+
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 25%;
+            height: 50%;
+            width: 3px;
+            background-color: var(--accent);
+            border-radius: 4px;
+        }
+
+        .content {
+            flex-grow: 1;
+            padding: 40px 50px;
+            overflow-y: auto;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h2 {
+            margin-top: 0;
+            font-weight: 600;
+            font-size: 28px;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            background-color: var(--control-bg);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: inherit;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 7px;
+        }
+
+        button {
+            background-color: #333333;
+            color: white;
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.15s;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #444444;
+        }
+
+        button.primary {
+            background-color: var(--accent);
+            color: black;
+            border: none;
+            font-weight: 600;
+        }
+
+        button.primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        button.danger {
+            background-color: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        button.danger:hover {
+            background-color: #800000;
+        }
+
+        .infobar {
+            background-color: rgba(255, 204, 0, 0.1);
+            border-left: 4px solid #FFCC00;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background-color: #242424;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+        }
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 16px;
+            height: 16px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="sidebar">
+        <div class="app-title">🛡️ Vortex Backup Tool</div>
+        <div class="nav-item active" onclick="switchTab('dashboard')">🎮 Dashboard</div>
+        <div class="nav-item" onclick="switchTab('vanilla')">🧹 Vanilla & Purge</div>
+        <div class="nav-item" onclick="switchTab('backup')">📦 Backup & Restore</div>
+        <div style="flex-grow: 1;"></div>
+        <div class="nav-item" onclick="switchTab('settings')">⚙️ Settings</div>
+    </div>
+
+    <div class="content">
+
+        <div id="dashboard" class="tab-content active">
+            <h2>Game Profiles</h2>
+            <p class="subtitle">Manage games, staging folders, and custom paths.</p>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <button>🔄 Remap Drive Letters</button>
+                <button class="primary">+ Add New Profile</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Skyrim Special Edition</span>
+                    <button>Edit Profile</button>
+                </div>
+                <div class="input-group">
+                    <span style="width: 140px; color: var(--text-muted);">Vortex Staging:</span>
+                    <input type="text" value="D:\Vortex Mods\skyrimse" readonly style="flex-grow: 1;">
+                </div>
+                <div class="input-group">
+                    <span style="width: 140px; color: var(--text-muted);">Game Root:</span>
+                    <input type="text" value="C:\Games\Skyrim" readonly style="flex-grow: 1;">
+                </div>
+                <div style="margin-top: 15px;">
+                    <label><input type="checkbox" checked disabled> Apply global ignore list to this profile</label>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Elder Scrolls Online (Custom Sources Only)</span>
+                    <button>Edit Profile</button>
+                </div>
+                <div style="color: var(--text-muted); margin-bottom: 10px; font-size: 14px;">Custom Folders Included:
+                </div>
+                <div class="list-item">
+                    <span style="font-family: monospace; font-size: 13px;">C:\Users\Volodymyr\Documents\Elder Scrolls
+                        Online\Addons</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="vanilla" class="tab-content">
+            <h2>Vanilla State & Purge</h2>
+            <p class="subtitle">Generate baseline snapshots and safely clean game directories.</p>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Select Target Profile</span>
+                    <select style="width: 250px;">
+                        <option>Skyrim Special Edition</option>
+                        <option>Cyberpunk 2077</option>
+                    </select>
+                </div>
+
+                <div style="margin-top: 25px;">
+                    <h4>Baseline Snapshot</h4>
+                    <p style="color: var(--text-muted); font-size: 13px;">Status: Valid. Created 2 days ago. Contains
+                        14,203 files.</p>
+                    <button>📷 Create / Update Snapshot</button>
+                </div>
+
+                <hr style="border-color: var(--border); margin: 25px 0;">
+
+                <div>
+                    <h4 style="color: var(--danger);">Purge Mod Files</h4>
+                    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+                        Compares Game Root against Baseline Snapshot. Deletes any unregistered files (configs, logs,
+                        manual mods).<br>
+                        <strong>A Safety Backup will be created before deletion.</strong>
+                    </p>
+                    <button class="danger">⚠️ Execute Safe Purge</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="backup" class="tab-content">
+            <h2>Backup & Restore</h2>
+            <p class="subtitle">Execute backup jobs or restore state from Google Drive.</p>
+
+            <div class="infobar">
+                <div>
+                    <strong>Paused Job Found:</strong> A previous backup job for "Skyrim" encountered locked files (File
+                    in Use).
+                </div>
+                <button class="primary"
+                    style="background-color: transparent; border: 1px solid #FFCC00; color: #FFCC00;">Resume &
+                    Append</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span class="card-title">Create Backup</span></div>
+                <div style="display: flex; gap: 40px; margin-bottom: 25px;">
+                    <div style="flex: 1;">
+                        <h4 style="margin-top: 0;">Target Profiles</h4>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Skyrim Special
+                            Edition</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Cyberpunk 2077</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Elder Scrolls Online</label>
+                    </div>
+                    <div style="flex: 1;">
+                        <h4 style="margin-top: 0;">Components to Backup</h4>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Staging Folders (1 archive
+                            per mod)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Game Configs (Diff vs
+                            Snapshot)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Vortex AppData
+                            (Roaming)</label>
+                        <hr style="border-color: var(--border); margin: 10px 0;">
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Pack as Single Monolithic
+                            Archive</label>
+                    </div>
+                </div>
+                <button class="primary" style="width: 100%;">Start Backup Job</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span class="card-title">Restore from Drive</span></div>
+                <p style="color: var(--text-muted); font-size: 13px;">Auto-Safety backup will run on current configs
+                    before restoring.</p>
+                <button>Browse Backup Directory...</button>
+            </div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <h2>Settings</h2>
+
+            <div class="card">
+                <div class="card-header"><span class="card-title">Storage Locations</span></div>
+                <div class="input-group">
+                    <span style="width: 150px;">Google Drive Path:</span>
+                    <input type="text" value="G:\Мій диск\Game files\Vortex backups" style="flex-grow: 1;">
+                    <button>Browse</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Dynamic Compression Mapping</span>
+                    <button>+ Add Rule</button>
+                </div>
+                <p style="color: var(--text-muted); font-size: 13px;">Optimize speed by disabling compression for large
+                    files.</p>
+
+                <div class="list-item">
+                    <span>Files up to <input type="number" value="50" style="width: 60px; text-align: center;">
+                        MB</span>
+                    <select>
+                        <option selected>Optimal</option>
+                        <option>Fastest</option>
+                        <option>No Compression</option>
+                    </select>
+                </div>
+                <div class="list-item">
+                    <span>Files larger than <input type="number" value="100" style="width: 60px; text-align: center;">
+                        MB</span>
+                    <select>
+                        <option>Optimal</option>
+                        <option>Fastest</option>
+                        <option selected>No Compression</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span class="card-title">Advanced</span></div>
+                <div class="input-group" style="margin-bottom: 20px;">
+                    <span style="width: 200px;">Safety Backup Retention:</span>
+                    <input type="number" value="14" style="width: 60px;"> <span
+                        style="color: var(--text-muted);">days</span>
+                </div>
+
+                <div>
+                    <span>Global Ignore Patterns (One per line)</span>
+                    <textarea
+                        style="width: 100%; height: 80px; margin-top: 8px; background: var(--control-bg); color: var(--text-main); border: 1px solid var(--border); padding: 10px; font-family: monospace; resize: vertical;">*.log
+CrashDumps/
+ShaderCache/</textarea>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+
+</html>

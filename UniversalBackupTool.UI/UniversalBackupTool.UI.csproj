@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalBackupTool.Interfaces\UniversalBackupTool.Interface.csproj" />
+    <ProjectReference Include="..\UniversalBackupTool.Services\UniversalBackupTool.Service.csproj" />
+    <ProjectReference Include="..\UniversalBackupTool.ViewModels\UniversalBackupTool.ViewModel.csproj" />
+  </ItemGroup>
+
+</Project>

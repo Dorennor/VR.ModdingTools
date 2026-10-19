@@ -2,5 +2,11 @@
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
   </Folder>
+  <Project Path="UniversalBackupTool.Interfaces/UniversalBackupTool.Interface.csproj" Id="d7ca9e49-b77b-4366-a1d3-42399d01e166" />
+  <Project Path="UniversalBackupTool.Models/UniversalBackupTool.Model.csproj" Id="254e7ae7-5b63-461a-b1a3-ca706620409b" />
+  <Project Path="UniversalBackupTool.Services/UniversalBackupTool.Service.csproj" Id="8ada75b5-8170-4976-b06e-82f06be0696a" />
+  <Project Path="UniversalBackupTool.Tests/UniversalBackupTool.Tests.csproj" Id="880984c7-de77-49e6-bfac-30710686d153" />
+  <Project Path="UniversalBackupTool.UI/UniversalBackupTool.UI.csproj" Id="a42f4cf4-f117-47d1-9a7d-a9d9ba7752ff" />
+  <Project Path="UniversalBackupTool.ViewModels/UniversalBackupTool.ViewModel.csproj" Id="08e6b11b-6322-4dbf-80c8-c078e3298fe4" />
   <Project Path="VR.ModdingTools.VortexBackup/VR.ModdingTools.VortexBackup.csproj" />
 </Solution>
