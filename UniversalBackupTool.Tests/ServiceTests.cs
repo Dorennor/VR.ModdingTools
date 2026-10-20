@@ -240,7 +240,7 @@ namespace UniversalBackupTool.Tests
             var fakeSafetyBackup = new FakeSafetyBackupService();
             var snapshotService = new SnapshotService(new FakeFileSystemProvider(), fakeSafetyBackup);
 
-            Assert.DoesNotThrowAsync(async () => await snapshotService.PurgeUnregisteredFilesAsync(rootPath, baseline));
+            await Assert.DoesNotThrowAsync(async () => await snapshotService.PurgeUnregisteredFilesAsync(rootPath, baseline));
             Assert.That(fakeSafetyBackup.CallCount, Is.EqualTo(0));
         }
     }
@@ -351,7 +351,7 @@ namespace UniversalBackupTool.Tests
         {
             var service = new JsonSettingsStore();
 
-            Assert.ThrowsAsync<ArgumentException>(async () => await service.LoadAsync(""));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await service.LoadAsync(""));
         }
     }
 
@@ -562,7 +562,7 @@ namespace UniversalBackupTool.Tests
             var settings = AppSettings.Default(Path.Combine(Path.GetTempPath(), "backups"));
             var engine = new BackupEngine(new FakeStoragePathsProvider(Path.GetTempPath()), new FakeFileSystemProvider());
 
-            Assert.ThrowsAsync<ArgumentException>(async () => await engine.CreateBackupArchiveAsync("", "/archive.zip", settings));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await engine.CreateBackupArchiveAsync("", "/archive.zip", settings));
         }
 
         [Test]
@@ -601,7 +601,7 @@ namespace UniversalBackupTool.Tests
             var settings = AppSettings.Default(Path.Combine(Path.GetTempPath(), "backups"));
             var engine = new BackupEngine(new FakeStoragePathsProvider(Path.GetTempPath()), new FakeFileSystemProvider());
 
-            Assert.ThrowsAsync<ArgumentException>(async () => await engine.ResumeBackupArchiveAsync("", "/source", settings));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await engine.ResumeBackupArchiveAsync("", "/source", settings));
         }
     }
 
@@ -851,7 +851,7 @@ namespace UniversalBackupTool.Tests
         {
             var service = new JsonSettingsStore();
 
-            Assert.ThrowsAsync<ArgumentException>(async () => await service.LoadAsync(null!));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await service.LoadAsync(null!));
         }
 
         [Test]
@@ -863,7 +863,7 @@ namespace UniversalBackupTool.Tests
 
             try
             {
-                Assert.DoesNotThrowAsync(async () => await service.SaveAsync(filePath, settings));
+                await Assert.DoesNotThrowAsync(async () => await service.SaveAsync(filePath, settings));
                 Assert.That(File.Exists(filePath), Is.True);
             }
             finally
@@ -927,7 +927,7 @@ namespace UniversalBackupTool.Tests
             var filePath = Path.Combine(Path.GetTempPath(), $"job-{Guid.NewGuid():N}.json");
             var service = new BackupJobStateService();
 
-            Assert.DoesNotThrowAsync(async () => await service.DeleteAsync(filePath));
+            await Assert.DoesNotThrowAsync(async () => await service.DeleteAsync(filePath));
         }
 
         [Test]
