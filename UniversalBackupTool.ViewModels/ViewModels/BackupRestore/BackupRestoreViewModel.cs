@@ -147,13 +147,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         [ObservableProperty]
         private bool _restoreCustomFolders = true;
 
-        private partial void OnRestoreStagingChanged(bool value) => RefreshRestorePlan();
+        partial void OnRestoreStagingChanged(bool value) => RefreshRestorePlan();
 
-        private partial void OnRestoreGameConfigsChanged(bool value) => RefreshRestorePlan();
+        partial void OnRestoreGameConfigsChanged(bool value) => RefreshRestorePlan();
 
-        private partial void OnRestoreAppDataChanged(bool value) => RefreshRestorePlan();
+        partial void OnRestoreAppDataChanged(bool value) => RefreshRestorePlan();
 
-        private partial void OnRestoreCustomFoldersChanged(bool value) => RefreshRestorePlan();
+        partial void OnRestoreCustomFoldersChanged(bool value) => RefreshRestorePlan();
 
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>

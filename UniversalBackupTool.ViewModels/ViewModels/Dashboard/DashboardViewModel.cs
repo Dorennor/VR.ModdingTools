@@ -116,13 +116,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         private string ProfilesFilePath => _storagePathsProvider.GetPaths().ProfilesFilePath;
 
-        private partial void OnEditVortexStagingPathChanged(string value) => OnPropertyChanged(nameof(EditVortexStagingDrive));
+        partial void OnEditVortexStagingPathChanged(string value) => OnPropertyChanged(nameof(EditVortexStagingDrive));
 
-        private partial void OnEditGameRootPathChanged(string value) => OnPropertyChanged(nameof(EditGameRootDrive));
+        partial void OnEditGameRootPathChanged(string value) => OnPropertyChanged(nameof(EditGameRootDrive));
 
-        private partial void OnEditVortexAppDataPathChanged(string value) => OnPropertyChanged(nameof(EditVortexAppDataDrive));
+        partial void OnEditVortexAppDataPathChanged(string value) => OnPropertyChanged(nameof(EditVortexAppDataDrive));
 
-        private partial void OnSelectedFindPathChanged(ProfilePathEntry? value) => ClearFindResults();
+        partial void OnSelectedFindPathChanged(ProfilePathEntry? value) => ClearFindResults();
 
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>

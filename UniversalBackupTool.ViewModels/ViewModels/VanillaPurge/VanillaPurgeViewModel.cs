@@ -73,7 +73,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         public string? GameRootPath => SelectedProfile?.Profile.GameRootPath;
 
-        private partial void OnSelectedProfileChanged(ProfileItemViewModel? value)
+        partial void OnSelectedProfileChanged(ProfileItemViewModel? value)
         {
             _ = RefreshSelectionAsync();
         }
