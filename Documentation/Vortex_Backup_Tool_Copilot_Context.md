@@ -85,6 +85,14 @@ public record SnapshotData(string ProfileId, Dictionary<string, FileMetadata> Fi
   - Continue zipping the rest of the files. Do NOT crash.
   - On the next application start (or retry button click), read `active_backup_job.json` and open the existing `.zip` using `ZipArchiveMode.Update` to append ONLY the missing files.
 
+### 4.3.1 Incremental Mod Snapshots
+
+- Each backup run creates a separate timestamped snapshot manifest; older snapshots remain restorable.
+- Staging is split into one archive unit per top-level mod folder. Archives live once in the game's shared `_archives/` directory, and snapshot manifests reference them. Keep `_archives/` alongside the dated snapshot directories when moving/copying backups. Unchanged mods reuse their previous archive; changed/new mods get a new immutable archive. Removed mods are omitted only from the new snapshot, not deleted from older snapshots.
+- Change detection stores each mod's relative file paths, file sizes, creation/write timestamps, file attributes, directory inventory and directory attributes (directory timestamps are recorded for diagnostics but do not trigger file-content reads), plus a SHA-256 digest for each file.
+- New archives are written to temporary files. A manifest is committed as complete only after all referenced archives are ready. If files are locked, the incomplete manifest is not offered for restore; Continue Backup retries the missing entries and then completes the manifest.
+- Manifest version 1 and monolithic backups remain supported by restore. New UI backups use per-component archives; monolithic packaging is not offered because it defeats per-mod archive reuse.
+
 ### 4.4 ISafetyBackupService
 
 - Automatically creates fast (`NoCompression`) zip archives of configs/mods before destructive actions (Purge or Restore).

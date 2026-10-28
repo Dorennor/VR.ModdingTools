@@ -46,25 +46,37 @@
                 Message="{Binding StatusMessage}"
                 Severity="Success" />
 
-            <ui:InfoBar
-                Title="Paused Job Found:"
+            <ui:Card
                 Margin="0,0,0,20"
-                IsClosable="False"
-                IsOpen="{Binding HasPausedJob}"
-                Message="{Binding PausedJobMessage}"
-                Severity="Warning">
-                <StackPanel Orientation="Horizontal">
-                    <Button
-                        Command="{Binding ResumeCommand}"
-                        Content="Resume &amp; Append"
-                        IsEnabled="{Binding IsIdle}" />
-                    <Button
-                        Margin="8,0,0,0"
-                        Command="{Binding DiscardPausedJobCommand}"
-                        Content="Discard"
-                        IsEnabled="{Binding IsIdle}" />
-                </StackPanel>
-            </ui:InfoBar>
+                Padding="16"
+                Visibility="{Binding HasPausedJob, Converter={StaticResource BoolToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <ui:TextBlock FontTypography="BodyStrong" Text="Backup needs to continue" />
+                        <ui:TextBlock
+                            Margin="0,4,16,0"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="{Binding PausedJobMessage}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                        <ui:Button
+                            Appearance="Primary"
+                            Command="{Binding ResumeCommand}"
+                            Content="Continue Backup"
+                            IsEnabled="{Binding IsIdle}" />
+                        <Button
+                            Margin="8,0,0,0"
+                            Command="{Binding DiscardPausedJobCommand}"
+                            Content="Discard"
+                            IsEnabled="{Binding IsIdle}" />
+                    </StackPanel>
+                </Grid>
+            </ui:Card>
 
             <ui:Card
                 Margin="0,0,0,24"
@@ -120,12 +132,15 @@
                                 Margin="0,0,0,4"
                                 FontTypography="BodyStrong"
                                 Text="Components to Backup" />
+                            <ui:TextBlock
+                                Margin="0,0,0,8"
+                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                Text="Staging mod folders are compared by file/folder metadata and cached SHA-256 hashes. Hashing runs alongside archive reads; unchanged files are not reread on later backups."
+                                TextWrapping="Wrap" />
                             <CheckBox Content="Staging Folders (1 archive per mod)" IsChecked="{Binding IncludeStaging, Mode=TwoWay}" />
                             <CheckBox Content="Game Configs (Diff vs Snapshot)" IsChecked="{Binding IncludeGameConfigs, Mode=TwoWay}" />
                             <CheckBox Content="Vortex AppData (Roaming)" IsChecked="{Binding IncludeVortexAppData, Mode=TwoWay}" />
                             <CheckBox Content="Custom Folders" IsChecked="{Binding IncludeCustomFolders, Mode=TwoWay}" />
-                            <Separator Margin="0,6,0,6" />
-                            <CheckBox Content="Pack as Single Monolithic Archive" IsChecked="{Binding PackMonolithic, Mode=TwoWay}" />
                         </StackPanel>
                     </Grid>
 
@@ -144,7 +159,7 @@
                     <ui:TextBlock FontTypography="Subtitle" Text="Restore from Drive" />
                     <ui:TextBlock
                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="Files that would be overwritten are saved to a Safety Backup before restoring."
+                        Text="Files that would be overwritten are saved to a Safety Backup before restoring. Keep each game's _archives folder alongside its dated snapshots; snapshots reuse archives from that shared folder."
                         TextWrapping="Wrap" />
                     <ui:Button
                         Command="{Binding BrowseRestoreFolderCommand}"

@@ -6,6 +6,8 @@ namespace UniversalBackupTool.Model.Models.Backups
 
         public int Version { get; init; } = 1;
 
+        public bool IsComplete { get; init; } = true;
+
         public Guid ProfileId { get; init; }
 
         public string GameName { get; init; } = string.Empty;

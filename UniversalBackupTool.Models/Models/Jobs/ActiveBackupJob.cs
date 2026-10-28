@@ -16,6 +16,10 @@ namespace UniversalBackupTool.Model.Models.Jobs
         /// </summary>
         public List<FailedBackupFile> FailedFiles { get; init; } = [];
 
+        public List<string> PendingManifestPaths { get; init; } = [];
+
+        public List<PendingArchiveMove> PendingArchiveMoves { get; init; } = [];
+
         public static ActiveBackupJob Create(Guid profileId, string archivePath, string rootPath)
             => new(Guid.NewGuid(), profileId, archivePath, rootPath, DateTimeOffset.Now, []);
     }

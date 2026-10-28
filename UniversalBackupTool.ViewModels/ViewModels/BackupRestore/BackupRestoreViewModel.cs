@@ -83,16 +83,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private bool _includeStaging = true;
 
         [ObservableProperty]
-        private bool _includeGameConfigs = true;
+        private bool _includeGameConfigs;
 
         [ObservableProperty]
         private bool _includeVortexAppData = true;
 
         [ObservableProperty]
-        private bool _includeCustomFolders = true;
-
-        [ObservableProperty]
-        private bool _packMonolithic;
+        private bool _includeCustomFolders;
 
         [ObservableProperty]
         private double _progressPercent;
@@ -172,9 +169,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     foreach (var profile in _allProfiles)
                         Targets.Add(new BackupTargetItemViewModel(profile, previouslySelected.Contains(profile.Id)));
 
-                    if (Targets.Count > 0 && !Targets.Any(target => target.IsSelected))
-                        Targets[0].IsSelected = true;
-
                     OnPropertyChanged(nameof(HasNoProfiles));
 
                     var job = await _backupJobStateService.LoadAsync(paths.ActiveBackupJobFilePath);
@@ -188,7 +182,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private Task StartBackupAsync() => RunOperationAsync(async token =>
                 {
                     var selected = Targets.Where(target => target.IsSelected).Select(target => target.Profile).ToList();
-                    var options = new BackupOptions(IncludeStaging, IncludeGameConfigs, IncludeVortexAppData, IncludeCustomFolders, PackMonolithic);
+                    var options = new BackupOptions(IncludeStaging, IncludeGameConfigs, IncludeVortexAppData, IncludeCustomFolders);
 
                     if (selected.Count == 0)
                     {
@@ -223,7 +217,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
                     await ReloadPausedJobAsync();
 
-                    StatusMessage = $"Backup finished: {batch.FilesArchived:N0} file(s) archived for {batch.Results.Count} profile(s) in {settings.GoogleDriveBackupPath}.";
+                    StatusMessage = $"Backup finished for {batch.Results.Count} profile(s): {batch.ModsArchived:N0} changed/new mod(s) in this snapshot, {batch.ModsReused:N0} unchanged mod archive(s) reused, {batch.ModsRemoved:N0} removed mod(s) omitted from the new snapshot; {batch.FilesArchived:N0} file(s) written to {settings.GoogleDriveBackupPath}.";
                     WarningMessage = BuildWarning(batch);
                 });
 
@@ -386,7 +380,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             var lines = batch.Results.SelectMany(result => result.Warnings).ToList();
 
             if (batch.FailedFiles.Count > 0)
-                lines.Add($"{batch.FailedFiles.Count} file(s) were in use and are missing from the archives. Close the game or Vortex, then use \"Resume & Append\".");
+                lines.Add($"{batch.FailedFiles.Count} file(s) were in use and are missing from the archives. Close the game or Vortex, then select Continue Backup below.");
 
             return lines.Count == 0 ? null : string.Join(Environment.NewLine, lines);
         }

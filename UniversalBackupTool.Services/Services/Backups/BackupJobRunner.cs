@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -96,7 +98,11 @@ namespace UniversalBackupTool.Service.Services.Backups
                 var job = ActiveBackupJob.Create(profile.Id, firstFailed.BackupDirectory, profile.GameRootPath ?? profile.VortexStagingPath ?? string.Empty) with
                 {
                     FailedFiles = failedFiles,
-                    FailedPaths = failedFiles.Select(file => file.SourcePath).ToList()
+                    FailedPaths = failedFiles.Select(file => file.SourcePath).ToList(),
+                    PendingManifestPaths = results.Where(result => result.FailedFiles.Count > 0 && result.ManifestPath is not null)
+                        .Select(result => result.ManifestPath!)
+                        .ToList(),
+                    PendingArchiveMoves = results.SelectMany(result => result.PendingArchiveMoves).ToList()
                 };
 
                 await _backupJobStateService.SaveAsync(job, cancellationToken);
@@ -116,30 +122,54 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var groups = job.FailedFiles
                 .GroupBy(file => file.ArchivePath, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+                .Select(group =>
+                {
+                    var archivePath = group.Key;
 
-            foreach (var group in groups)
-            {
-                if (!File.Exists(group.Key))
-                    throw new InvalidOperationException($"The archive of the paused job no longer exists: {group.Key}. Discard the paused job.");
-            }
+                    if (!File.Exists(archivePath))
+                    {
+                        var publishedArchive = job.PendingArchiveMoves.FirstOrDefault(move =>
+                            string.Equals(move.TemporaryPath, archivePath, StringComparison.OrdinalIgnoreCase))?.FinalPath;
+
+                        if (publishedArchive is null || !File.Exists(publishedArchive))
+                            throw new InvalidOperationException($"The archive of the paused job no longer exists: {archivePath}. Discard the paused job.");
+
+                        archivePath = publishedArchive;
+                    }
+
+                    return new FailedArchiveGroup(archivePath, group.ToList());
+                })
+                .ToList();
 
             var totalFiles = job.FailedFiles.Count;
             var totalBytes = job.FailedFiles.Sum(file => GetLength(file.SourcePath));
             var tracker = new ProgressTracker("Retrying locked files", totalBytes, totalFiles, progress);
 
             var remaining = new List<FailedBackupFile>();
+            var completedHashes = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
             var archived = 0;
 
             foreach (var group in groups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var items = group.Select(file => new ArchiveFileItem(file.SourcePath, file.EntryName)).ToList();
-                var result = await _archiveService.AppendToArchiveAsync(group.Key, items, settings, tracker, cancellationToken);
+                var items = group.Files.Select(file => new ArchiveFileItem(file.SourcePath, file.EntryName)).ToList();
+                var result = await _archiveService.AppendToArchiveAsync(group.ArchivePath, items, settings, tracker, cancellationToken);
 
                 archived += result.FilesWritten;
-                remaining.AddRange(result.Failed.Select(item => new FailedBackupFile(group.Key, item.EntryName, item.SourcePath)));
+                remaining.AddRange(result.Failed.Select(item => new FailedBackupFile(group.ArchivePath, item.EntryName, item.SourcePath)));
+
+                if (!completedHashes.TryGetValue(group.ArchivePath, out var archiveHashes))
+                {
+                    archiveHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    completedHashes.Add(group.ArchivePath, archiveHashes);
+                }
+
+                foreach (var file in group.Files)
+                {
+                    if (result.FileHashes.TryGetValue(file.SourcePath, out var hash))
+                        archiveHashes[file.EntryName.Replace('\\', '/')] = hash;
+                }
             }
 
             tracker.Finish();
@@ -148,6 +178,30 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (remaining.Count == 0)
             {
+                foreach (var move in job.PendingArchiveMoves)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Directory.CreateDirectory(Path.GetDirectoryName(move.FinalPath)!);
+
+                    if (File.Exists(move.TemporaryPath))
+                    {
+                        if (File.Exists(move.FinalPath))
+                            File.Delete(move.TemporaryPath);
+                        else
+                            File.Move(move.TemporaryPath, move.FinalPath);
+                    }
+                    else if (!File.Exists(move.FinalPath))
+                    {
+                        throw new FileNotFoundException("A completed archive temporary file is missing.", move.TemporaryPath);
+                    }
+                }
+
+                foreach (var manifestPath in job.PendingManifestPaths)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await MarkManifestCompleteAsync(manifestPath, job.PendingArchiveMoves, completedHashes, cancellationToken);
+                }
+
                 await _backupJobStateService.DeleteAsync(paths.ActiveBackupJobFilePath, cancellationToken);
             }
             else
@@ -160,7 +214,213 @@ namespace UniversalBackupTool.Service.Services.Backups
             return new BackupBatchResult([], remaining, archived);
         }
 
-        private async Task<BackupResult> BackupProfileAsync(
+        private Task<BackupResult> BackupProfileAsync(
+            BackupProfile profile,
+            BackupOptions options,
+            AppSettings settings,
+            string progressLabel,
+            IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            return options.Monolithic
+                ? BackupLegacyProfileAsync(profile, options, settings, progressLabel, progress, cancellationToken)
+                : BackupIncrementalProfileAsync(profile, options, settings, progressLabel, progress, cancellationToken);
+        }
+
+        private async Task<BackupResult> BackupIncrementalProfileAsync(
+            BackupProfile profile,
+            BackupOptions options,
+            AppSettings settings,
+            string progressLabel,
+            IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            var warnings = new List<string>();
+            var filter = _ignorePatternMatcher.Create(profile.UseIgnoreList ? settings.GlobalIgnorePatterns : []);
+
+            progress?.Report(new BackupProgress($"{progressLabel}: scanning files", null, 0, 0, 0, 0));
+            var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, cancellationToken);
+
+            if (units.Count == 0)
+            {
+                var reason = warnings.Count > 0 ? " " + string.Join(" ", warnings) : string.Empty;
+                throw new InvalidOperationException($"Nothing to back up for \"{profile.GameName}\".{reason}");
+            }
+
+            var gameDirectory = Path.Combine(settings.GoogleDriveBackupPath, SanitizeFileName(profile.GameName));
+            var previousManifest = await LoadLatestCompleteManifestAsync(gameDirectory, profile, cancellationToken);
+            var previousUnits = previousManifest?.Manifest.Units ?? [];
+            var archiveRoot = Path.Combine(gameDirectory, "_archives");
+            var plans = new List<ArchivePlan>();
+
+            foreach (var unit in units)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var files = CollectFileMetadata(unit.Files);
+                var directories = CollectDirectoryMetadata(unit.Manifest);
+                var prior = previousUnits.FirstOrDefault(candidate =>
+                    string.Equals(GetUnitKey(candidate), GetUnitKey(unit.Manifest), StringComparison.OrdinalIgnoreCase));
+
+                if (prior is not null && FileMetadataMatches(prior.FileFingerprints, files) && DirectoryMetadataMatches(prior.DirectoryFingerprints, directories))
+                {
+                    var cachedFiles = files.Select(file => file with
+                    {
+                        Sha256 = prior.FileFingerprints.First(previous => string.Equals(previous.RelativePath, file.RelativePath, StringComparison.OrdinalIgnoreCase)).Sha256
+                    }).ToList();
+                    var priorArchivePath = ResolveArchivePath(previousManifest!.Directory, prior);
+
+                    if (cachedFiles.All(file => file.Sha256.Length > 0) && File.Exists(priorArchivePath))
+                    {
+                        plans.Add(new ArchivePlan(unit, cachedFiles, directories, prior, prior.ArchiveFile, priorArchivePath, prior.ArchiveRootRelativePath, true));
+                        continue;
+                    }
+                }
+
+                var archiveIdentity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{GetUnitKey(unit.Manifest)}|{Guid.NewGuid():N}")));
+                var archiveRelativePath = $"_archives/{archiveIdentity}.zip";
+                var finalArchivePath = Path.Combine(archiveRoot, archiveIdentity + ".zip");
+                plans.Add(new ArchivePlan(unit, files, directories, prior, archiveRelativePath, finalArchivePath, "..", false));
+            }
+
+            var backupDirectory = CreateBackupDirectory(settings.GoogleDriveBackupPath, profile.GameName);
+            var failedFiles = new List<FailedBackupFile>();
+            var pendingMoves = new List<PendingArchiveMove>();
+            var temporaryArchives = new List<string>();
+            var manifestUnits = new List<BackupManifestUnit>();
+            var filesToArchive = 0;
+            var writePlans = plans.Where(plan => !plan.IsPreviousReuse).ToList();
+            var totalBytes = writePlans.Sum(plan => plan.Unit.Files.Sum(file => GetLength(file.SourcePath)));
+            var tracker = new ProgressTracker($"{progressLabel}: checking and archiving changed files", totalBytes, writePlans.Sum(plan => plan.Unit.Files.Count), progress);
+            var modsArchived = 0;
+            var modsReused = 0;
+
+            try
+            {
+                Directory.CreateDirectory(archiveRoot);
+
+                foreach (var plan in plans)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var unit = plan.Unit;
+
+                    if (unit.Manifest.Component == BackupComponent.StagingFolders && plan.IsPreviousReuse)
+                        modsReused++;
+
+                    if (plan.IsPreviousReuse)
+                    {
+                        manifestUnits.Add(unit.Manifest with
+                        {
+                            ArchiveFile = plan.ArchiveRelativePath,
+                            Fingerprint = ComputeUnitFingerprint(plan.Files, plan.Directories),
+                            ArchiveRootRelativePath = plan.ArchiveRootRelativePath,
+                            FileFingerprints = plan.Files,
+                            DirectoryFingerprints = plan.Directories
+                        });
+                        continue;
+                    }
+
+                    var temporaryPath = plan.FinalArchivePath + $".{Guid.NewGuid():N}.pending";
+                    temporaryArchives.Add(temporaryPath);
+                    var archiveResult = await _archiveService.CreateArchiveAsync(temporaryPath, unit.Files, settings, tracker, cancellationToken);
+                    var filesWithHashes = AttachHashes(plan.Files, unit.Files, archiveResult.FileHashes);
+                    var hashesMatchPrevious = plan.PreviousUnit is not null
+                        && FileContentsMatch(plan.PreviousUnit.FileFingerprints, filesWithHashes)
+                        && DirectoryMetadataMatches(plan.PreviousUnit.DirectoryFingerprints, plan.Directories);
+
+                    if (archiveResult.Failed.Count > 0)
+                    {
+                        filesToArchive += archiveResult.FilesWritten;
+                        failedFiles.AddRange(archiveResult.Failed.Select(item => new FailedBackupFile(temporaryPath, item.EntryName, item.SourcePath)));
+                        pendingMoves.Add(new PendingArchiveMove(temporaryPath, plan.FinalArchivePath));
+                    }
+                    else if (hashesMatchPrevious && plan.PreviousUnit is not null && previousManifest is not null)
+                    {
+                        TryDeleteFile(temporaryPath);
+                        temporaryArchives.Remove(temporaryPath);
+                        if (unit.Manifest.Component == BackupComponent.StagingFolders)
+                            modsReused++;
+                        manifestUnits.Add(unit.Manifest with
+                        {
+                            ArchiveFile = plan.PreviousUnit.ArchiveFile,
+                            Fingerprint = ComputeUnitFingerprint(filesWithHashes, plan.Directories),
+                            ArchiveRootRelativePath = plan.PreviousUnit.ArchiveRootRelativePath,
+                            FileFingerprints = filesWithHashes,
+                            DirectoryFingerprints = plan.Directories
+                        });
+                        continue;
+                    }
+                    else
+                    {
+                        filesToArchive += archiveResult.FilesWritten;
+
+                        if (!FileMetadataMatches(plan.Files, CollectFileMetadata(unit.Files))
+                            || !DirectoryMetadataMatches(plan.Directories, CollectDirectoryMetadata(unit.Manifest)))
+                            throw new IOException($"Files or folders changed while their backup archive was being created: {unit.Manifest.RelativeDestination}");
+
+                        if (File.Exists(plan.FinalArchivePath))
+                            throw new IOException($"The destination archive already exists unexpectedly: {plan.FinalArchivePath}");
+
+                        File.Move(temporaryPath, plan.FinalArchivePath);
+                        temporaryArchives.Remove(temporaryPath);
+                    }
+
+                    if (unit.Manifest.Component == BackupComponent.StagingFolders)
+                        modsArchived++;
+
+                    manifestUnits.Add(unit.Manifest with
+                    {
+                        ArchiveFile = plan.ArchiveRelativePath,
+                        Fingerprint = ComputeUnitFingerprint(filesWithHashes, plan.Directories),
+                        ArchiveRootRelativePath = plan.ArchiveRootRelativePath,
+                        FileFingerprints = filesWithHashes,
+                        DirectoryFingerprints = plan.Directories
+                    });
+                }
+
+                tracker.Finish();
+                var currentModNames = units
+                    .Where(unit => unit.Manifest.Component == BackupComponent.StagingFolders)
+                    .Select(unit => unit.Manifest.RelativeDestination)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var previousModNames = previousUnits
+                    .Where(unit => unit.Component == BackupComponent.StagingFolders)
+                    .Select(unit => unit.RelativeDestination)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var removedMods = options.IncludeStaging ? previousModNames.Except(currentModNames, StringComparer.OrdinalIgnoreCase).Count() : 0;
+
+                var manifest = new BackupManifest
+                {
+                    Version = 2,
+                    IsComplete = failedFiles.Count == 0,
+                    ProfileId = profile.Id,
+                    GameName = profile.GameName,
+                    CreatedAt = DateTimeOffset.Now,
+                    IsMonolithic = false,
+                    Units = manifestUnits
+                };
+
+                await WriteManifestAsync(backupDirectory, manifest, cancellationToken);
+
+                return new BackupResult(profile.GameName, backupDirectory, filesToArchive, warnings, failedFiles)
+                {
+                    ManifestPath = Path.Combine(backupDirectory, BackupManifest.FileName),
+                    ModsArchived = modsArchived,
+                    ModsReused = modsReused,
+                    ModsRemoved = removedMods,
+                    PendingArchiveMoves = pendingMoves
+                };
+            }
+            catch
+            {
+                foreach (var temporaryPath in temporaryArchives)
+                    TryDeleteFile(temporaryPath);
+
+                TryDeleteDirectory(backupDirectory);
+                throw;
+            }
+        }
+
+        private async Task<BackupResult> BackupLegacyProfileAsync(
             BackupProfile profile,
             BackupOptions options,
             AppSettings settings,
@@ -211,12 +471,16 @@ namespace UniversalBackupTool.Service.Services.Backups
                     GameName = profile.GameName,
                     CreatedAt = DateTimeOffset.Now,
                     IsMonolithic = options.Monolithic,
+                    IsComplete = failedFiles.Count == 0,
                     Units = units.Select(unit => unit.Manifest).ToList()
                 };
 
                 await WriteManifestAsync(backupDirectory, manifest, cancellationToken);
 
-                return new BackupResult(profile.GameName, backupDirectory, archived, warnings, failedFiles);
+                return new BackupResult(profile.GameName, backupDirectory, archived, warnings, failedFiles)
+                {
+                    ManifestPath = Path.Combine(backupDirectory, BackupManifest.FileName)
+                };
             }
             catch
             {
@@ -399,6 +663,226 @@ namespace UniversalBackupTool.Service.Services.Backups
             return separatorIndex < 0 ? string.Empty : relativePath[..separatorIndex];
         }
 
+        private static async Task<LocatedManifest?> LoadLatestCompleteManifestAsync(
+            string gameDirectory,
+            BackupProfile profile,
+            CancellationToken cancellationToken)
+        {
+            if (!Directory.Exists(gameDirectory))
+                return null;
+
+            LocatedManifest? latest = null;
+
+            foreach (var directory in Directory.EnumerateDirectories(gameDirectory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var path = Path.Combine(directory, BackupManifest.FileName);
+
+                if (!File.Exists(path))
+                    continue;
+
+                try
+                {
+                    await using var stream = File.OpenRead(path);
+                    var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken);
+
+                    if (manifest is null || !manifest.IsComplete || manifest.Units is null)
+                        continue;
+
+                    var profileMatches = manifest.ProfileId == profile.Id
+                        || string.Equals(manifest.GameName, profile.GameName, StringComparison.OrdinalIgnoreCase);
+
+                    if (profileMatches && (latest is null || manifest.CreatedAt > latest.Manifest.CreatedAt))
+                        latest = new LocatedManifest(directory, manifest);
+                }
+                catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+
+            return latest;
+        }
+
+        private static string ResolveArchivePath(string manifestDirectory, BackupManifestUnit unit)
+        {
+            if (unit.ArchiveRootRelativePath is not "." and not "..")
+                throw new InvalidDataException("The backup manifest contains an unsupported archive root.");
+
+            var archiveRoot = Path.GetFullPath(Path.Combine(manifestDirectory, unit.ArchiveRootRelativePath));
+            var rootPrefix = Path.TrimEndingDirectorySeparator(archiveRoot) + Path.DirectorySeparatorChar;
+            var archivePath = Path.GetFullPath(Path.Combine(archiveRoot, unit.ArchiveFile.Replace('/', Path.DirectorySeparatorChar)));
+
+            if (!archivePath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Archive path escapes its snapshot storage root: {unit.ArchiveFile}");
+
+            return archivePath;
+        }
+
+        private static string GetUnitKey(BackupManifestUnit unit)
+        {
+            var customRoot = unit.Component == BackupComponent.CustomFolders
+                ? Path.GetFullPath(unit.OriginalRootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                : string.Empty;
+
+            return $"{unit.Component}|{unit.RelativeDestination}|{customRoot}";
+        }
+
+        private static List<FileFingerprint> CollectFileMetadata(IReadOnlyList<ArchiveFileItem> files)
+        {
+            return files.Select(file =>
+            {
+                var info = new FileInfo(file.SourcePath);
+                info.Refresh();
+
+                return new FileFingerprint(
+                    file.EntryName.Replace('\\', '/'),
+                    info.Exists ? info.Length : -1,
+                    info.Exists ? info.CreationTimeUtc.Ticks : -1,
+                    info.Exists ? info.LastWriteTimeUtc.Ticks : -1,
+                    info.Exists ? info.Attributes : 0,
+                    string.Empty);
+            }).OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static List<DirectoryFingerprint> CollectDirectoryMetadata(BackupManifestUnit unit)
+        {
+            var root = unit.Component == BackupComponent.StagingFolders && unit.RelativeDestination.Length > 0
+                ? Path.Combine(unit.OriginalRootPath, unit.RelativeDestination)
+                : unit.OriginalRootPath;
+
+            if (!Directory.Exists(root))
+                return [];
+
+            var results = new List<DirectoryFingerprint>();
+            var pending = new Stack<string>();
+            pending.Push(root);
+
+            while (pending.TryPop(out var current))
+            {
+                foreach (var directory in Directory.EnumerateDirectories(current))
+                {
+                    var info = new DirectoryInfo(directory);
+                    info.Refresh();
+                    var attributes = info.Attributes;
+
+                    if ((attributes & FileAttributes.ReparsePoint) != 0)
+                        continue;
+
+                    var relative = Path.GetRelativePath(root, directory).Replace('\\', '/');
+                    results.Add(new DirectoryFingerprint(relative, info.CreationTimeUtc.Ticks, info.LastWriteTimeUtc.Ticks, attributes));
+                    pending.Push(directory);
+                }
+            }
+
+            return results.OrderBy(directory => directory.RelativePath, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static bool FileMetadataMatches(IReadOnlyList<FileFingerprint> previous, IReadOnlyList<FileFingerprint> current)
+        {
+            if (previous.Count != current.Count)
+                return false;
+
+            var previousByPath = previous.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase);
+            return current.All(file => previousByPath.TryGetValue(file.RelativePath, out var old)
+                && old.Length == file.Length
+                && old.CreationTimeUtcTicks == file.CreationTimeUtcTicks
+                && old.LastWriteTimeUtcTicks == file.LastWriteTimeUtcTicks
+                && old.Attributes == file.Attributes);
+        }
+
+        private static bool DirectoryMetadataMatches(IReadOnlyList<DirectoryFingerprint> previous, IReadOnlyList<DirectoryFingerprint> current)
+        {
+            if (previous.Count != current.Count)
+                return false;
+
+            var previousByPath = previous.ToDictionary(directory => directory.RelativePath, StringComparer.OrdinalIgnoreCase);
+            return current.All(directory => previousByPath.TryGetValue(directory.RelativePath, out var old)
+                && old.Attributes == directory.Attributes);
+        }
+
+        private static bool FileContentsMatch(IReadOnlyList<FileFingerprint> previous, IReadOnlyList<FileFingerprint> current)
+        {
+            if (previous.Count != current.Count)
+                return false;
+
+            var previousByPath = previous.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase);
+            return current.All(file => file.Sha256.Length > 0
+                && previousByPath.TryGetValue(file.RelativePath, out var old)
+                && old.Sha256.Length > 0
+                && string.Equals(old.Sha256, file.Sha256, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static List<FileFingerprint> AttachHashes(
+            IReadOnlyList<FileFingerprint> metadata,
+            IReadOnlyList<ArchiveFileItem> files,
+            IReadOnlyDictionary<string, string> hashes)
+        {
+            var sourceByEntry = files.ToDictionary(file => file.EntryName.Replace('\\', '/'), file => file.SourcePath, StringComparer.OrdinalIgnoreCase);
+            return metadata.Select(file => file with
+            {
+                Sha256 = sourceByEntry.TryGetValue(file.RelativePath, out var sourcePath) && hashes.TryGetValue(sourcePath, out var hash)
+                    ? hash
+                    : string.Empty
+            }).ToList();
+        }
+
+        private static string ComputeUnitFingerprint(IReadOnlyList<FileFingerprint> files, IReadOnlyList<DirectoryFingerprint> directories)
+        {
+            var builder = new StringBuilder();
+
+            foreach (var file in files.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase))
+            {
+                builder.Append("F|").Append(file.RelativePath).Append('|').Append(file.Length).Append('|')
+                    .Append(file.CreationTimeUtcTicks).Append('|').Append(file.LastWriteTimeUtcTicks).Append('|')
+                    .Append((int)file.Attributes).Append('|').Append(file.Sha256).Append('\n');
+            }
+
+            foreach (var directory in directories.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase))
+            {
+                builder.Append("D|").Append(directory.RelativePath).Append('|').Append(directory.CreationTimeUtcTicks).Append('|')
+                    .Append(directory.LastWriteTimeUtcTicks).Append('|').Append((int)directory.Attributes).Append('\n');
+            }
+
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+        }
+
+        private static async Task MarkManifestCompleteAsync(
+            string manifestPath,
+            IReadOnlyList<PendingArchiveMove> pendingMoves,
+            IReadOnlyDictionary<string, Dictionary<string, string>> completedHashes,
+            CancellationToken cancellationToken)
+        {
+            BackupManifest manifest;
+
+            await using (var stream = File.OpenRead(manifestPath))
+            {
+                manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken)
+                    ?? throw new InvalidDataException($"Backup manifest could not be read: {manifestPath}");
+            }
+
+            var snapshotDirectory = Path.GetDirectoryName(manifestPath)!;
+            var units = manifest.Units.Select(unit =>
+            {
+                var archivePath = ResolveArchivePath(snapshotDirectory, unit);
+                var finalPath = pendingMoves.FirstOrDefault(move => string.Equals(move.FinalPath, archivePath, StringComparison.OrdinalIgnoreCase))?.FinalPath;
+
+                if (finalPath is null || !completedHashes.TryGetValue(finalPath, out var hashes))
+                    return unit;
+
+                var files = unit.FileFingerprints.Select(file => hashes.TryGetValue(file.RelativePath, out var hash)
+                    ? file with { Sha256 = hash }
+                    : file).ToList();
+
+                return unit with
+                {
+                    FileFingerprints = files,
+                    Fingerprint = ComputeUnitFingerprint(files, unit.DirectoryFingerprints)
+                };
+            }).ToList();
+
+            await WriteManifestFileAsync(manifestPath, manifest with { IsComplete = true, Units = units }, cancellationToken);
+        }
+
         private static string CreateBackupDirectory(string backupRoot, string gameName)
         {
             var gameDirectory = Path.Combine(backupRoot, SanitizeFileName(gameName));
@@ -417,12 +901,28 @@ namespace UniversalBackupTool.Service.Services.Backups
             return candidate;
         }
 
-        private static async Task WriteManifestAsync(string backupDirectory, BackupManifest manifest, CancellationToken cancellationToken)
+        private static Task WriteManifestAsync(string backupDirectory, BackupManifest manifest, CancellationToken cancellationToken)
         {
             var manifestPath = Path.Combine(backupDirectory, BackupManifest.FileName);
+            return WriteManifestFileAsync(manifestPath, manifest, cancellationToken);
+        }
 
-            await using var stream = File.Create(manifestPath);
-            await JsonSerializer.SerializeAsync(stream, manifest, ManifestJsonOptions, cancellationToken);
+        private static async Task WriteManifestFileAsync(string manifestPath, BackupManifest manifest, CancellationToken cancellationToken)
+        {
+            var temporaryPath = manifestPath + ".tmp";
+
+            try
+            {
+                await using (var stream = File.Create(temporaryPath))
+                    await JsonSerializer.SerializeAsync(stream, manifest, ManifestJsonOptions, cancellationToken);
+
+                File.Move(temporaryPath, manifestPath, overwrite: true);
+            }
+            catch
+            {
+                TryDeleteFile(temporaryPath);
+                throw;
+            }
         }
 
         private static string SanitizeFileName(string name)
@@ -462,9 +962,35 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
         }
 
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
         private sealed record SourceFile(string FullPath, string RelativePath);
 
+        private sealed record LocatedManifest(string Directory, BackupManifest Manifest);
+
+        private sealed record FailedArchiveGroup(string ArchivePath, List<FailedBackupFile> Files);
+
         private sealed record UnitPlan(BackupManifestUnit Manifest, List<ArchiveFileItem> Files);
+
+        private sealed record ArchivePlan(
+            UnitPlan Unit,
+            List<FileFingerprint> Files,
+            List<DirectoryFingerprint> Directories,
+            BackupManifestUnit? PreviousUnit,
+            string ArchiveRelativePath,
+            string FinalArchivePath,
+            string ArchiveRootRelativePath,
+            bool IsPreviousReuse);
 
         private sealed class ProgressTracker : IProgress<ArchiveProgress>
         {

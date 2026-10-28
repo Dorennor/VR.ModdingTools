@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Model.Models.Backups;
@@ -16,6 +17,8 @@ namespace UniversalBackupTool.Service.Services.Backups
             Missing,
             Failed
         }
+
+        private sealed record FileWriteOutcome(FileOutcome Outcome, string? Sha256);
 
         public Task<ArchiveWriteResult> CreateArchiveAsync(
             string archivePath,
@@ -57,6 +60,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 Directory.CreateDirectory(directory);
 
             var failed = new List<ArchiveFileItem>();
+            var hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var written = 0;
 
             var fileMode = mode == ZipArchiveMode.Create ? FileMode.Create : FileMode.OpenOrCreate;
@@ -70,7 +74,10 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 var outcome = await TryAddFileAsync(zipArchive, item, settings, mode == ZipArchiveMode.Update, progress, cancellationToken);
 
-                switch (outcome)
+                if (outcome.Sha256 is not null)
+                    hashes[item.SourcePath] = outcome.Sha256;
+
+                switch (outcome.Outcome)
                 {
                     case FileOutcome.Written:
                         written++;
@@ -82,10 +89,10 @@ namespace UniversalBackupTool.Service.Services.Backups
                 }
             }
 
-            return new ArchiveWriteResult(written, failed);
+            return new ArchiveWriteResult(written, failed) { FileHashes = hashes };
         }
 
-        private static async Task<FileOutcome> TryAddFileAsync(
+        private static async Task<FileWriteOutcome> TryAddFileAsync(
             ZipArchive zipArchive,
             ArchiveFileItem item,
             AppSettings settings,
@@ -103,15 +110,16 @@ namespace UniversalBackupTool.Service.Services.Backups
             catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
                 progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
-                return FileOutcome.Missing;
+                return new FileWriteOutcome(FileOutcome.Missing, null);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
-                return FileOutcome.Failed;
+                return new FileWriteOutcome(FileOutcome.Failed, null);
             }
 
             var readFailed = false;
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
             await using (input)
             {
@@ -144,6 +152,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                     if (read == 0)
                         break;
 
+                    hash.AppendData(buffer, 0, read);
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
 
                     progress?.Report(new ArchiveProgress(item.SourcePath, read, false));
@@ -152,7 +161,9 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
 
-            return readFailed ? FileOutcome.Failed : FileOutcome.Written;
+            return readFailed
+                ? new FileWriteOutcome(FileOutcome.Failed, null)
+                : new FileWriteOutcome(FileOutcome.Written, Convert.ToHexString(hash.GetHashAndReset()));
         }
 
         private static CompressionLevel GetCompressionLevel(long fileLength, AppSettings settings)

@@ -42,7 +42,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 await using var stream = File.OpenRead(manifestPath);
                 var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken);
 
-                return manifest?.Units is null ? null : manifest;
+                return manifest?.Units is null || !manifest.IsComplete ? null : manifest;
             }
             catch (JsonException)
             {
@@ -165,7 +165,15 @@ namespace UniversalBackupTool.Service.Services.Backups
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var archivePath = Path.Combine(backupDirectory, planItem.Unit.ArchiveFile.Replace('/', Path.DirectorySeparatorChar));
+                if (planItem.Unit.ArchiveRootRelativePath is not "." and not "..")
+                    throw new InvalidDataException("The backup manifest contains an unsupported archive root.");
+
+                var archiveRoot = Path.GetFullPath(Path.Combine(backupDirectory, planItem.Unit.ArchiveRootRelativePath));
+                var archiveRootPrefix = Path.TrimEndingDirectorySeparator(archiveRoot) + Path.DirectorySeparatorChar;
+                var archivePath = Path.GetFullPath(Path.Combine(archiveRoot, planItem.Unit.ArchiveFile.Replace('/', Path.DirectorySeparatorChar)));
+
+                if (!archivePath.StartsWith(archiveRootPrefix, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Archive path escapes its snapshot storage root: {planItem.Unit.ArchiveFile}");
 
                 if (!File.Exists(archivePath))
                     throw new FileNotFoundException($"Archive listed in the backup manifest is missing: {planItem.Unit.ArchiveFile}", archivePath);

@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
@@ -279,15 +281,121 @@ namespace UniversalBackupTool.Tests
             var batch = await _runner.RunBackupAsync([CreateProfile()], StagingOnly(), _settings);
             var dir = batch.Results.Single().BackupDirectory;
 
+            var manifest = await _restore.ReadManifestAsync(dir);
+            var archiveRoot = Path.Combine(dir, "..");
+
             Assert.Multiple(() =>
             {
                 Assert.That(batch.IsComplete, Is.True);
                 Assert.That(batch.FilesArchived, Is.EqualTo(3));
-                Assert.That(File.Exists(Path.Combine(dir, "staging", "ModA.zip")), Is.True);
-                Assert.That(File.Exists(Path.Combine(dir, "staging", "ModB.zip")), Is.True);
-                Assert.That(File.Exists(Path.Combine(dir, "staging", "_root_files.zip")), Is.True);
+                Assert.That(manifest!.Units, Has.Count.EqualTo(3));
+                Assert.That(manifest.Units.SelectMany(unit => unit.FileFingerprints).All(file => file.Sha256.Length == 64), Is.True);
+                Assert.That(manifest.Units.Single(unit => unit.RelativeDestination == "ModA").FileFingerprints.Single().Sha256, Is.EqualTo(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("A")))));
+                Assert.That(manifest.Units.All(unit => File.Exists(Path.GetFullPath(Path.Combine(archiveRoot, unit.ArchiveFile)))), Is.True);
+                Assert.That(manifest.Units.All(unit => unit.ArchiveRootRelativePath == ".."), Is.True);
                 Assert.That(File.Exists(Path.Combine(dir, BackupManifest.FileName)), Is.True);
                 Assert.That(Path.GetDirectoryName(dir), Does.StartWith(_drive));
+            });
+        }
+
+        [Test]
+        public async Task Backup_UnchangedSecondRun_ReusesModArchivesWithoutWritingFiles()
+        {
+            Write("ModA/a.txt", "A");
+            Write("ModB/b.txt", "B");
+            var profile = CreateProfile();
+
+            var first = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var firstManifest = (await _restore.ReadManifestAsync(first.Results.Single().BackupDirectory))!;
+            var second = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var secondManifest = (await _restore.ReadManifestAsync(second.Results.Single().BackupDirectory))!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(second.FilesArchived, Is.Zero);
+                Assert.That(second.ModsArchived, Is.Zero);
+                Assert.That(second.ModsReused, Is.EqualTo(2));
+                Assert.That(secondManifest.Units.Select(unit => unit.ArchiveFile), Is.EquivalentTo(firstManifest.Units.Select(unit => unit.ArchiveFile)));
+                Assert.That(Directory.GetFiles(Path.Combine(_drive, "Test Game", "_archives"), "*.zip"), Has.Length.EqualTo(2));
+            });
+
+            File.WriteAllText(Path.Combine(_staging, "ModA", "a.txt"), "changed");
+            var plan = _restore.BuildPlan(secondManifest, [profile], [BackupComponent.StagingFolders]);
+            await _restore.RestoreAsync(second.Results.Single().BackupDirectory, plan);
+            Assert.That(File.ReadAllText(Path.Combine(_staging, "ModA", "a.txt")), Is.EqualTo("A"));
+        }
+
+        [Test]
+        public async Task Backup_MetadataChangedButContentSame_ReusesArchiveAfterHashing()
+        {
+            Write("ModA/a.txt", "same bytes");
+            var profile = CreateProfile();
+            var first = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var firstManifest = (await _restore.ReadManifestAsync(first.Results.Single().BackupDirectory))!;
+            var filePath = Path.Combine(_staging, "ModA", "a.txt");
+            var originalCreationTime = File.GetCreationTimeUtc(filePath);
+
+            File.SetCreationTimeUtc(filePath, originalCreationTime.AddMinutes(-2));
+            var second = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var secondManifest = (await _restore.ReadManifestAsync(second.Results.Single().BackupDirectory))!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(second.FilesArchived, Is.Zero);
+                Assert.That(second.ModsArchived, Is.Zero);
+                Assert.That(second.ModsReused, Is.EqualTo(1));
+                Assert.That(secondManifest.Units.Single().ArchiveFile, Is.EqualTo(firstManifest.Units.Single().ArchiveFile));
+                Assert.That(secondManifest.Units.Single().FileFingerprints.Single().Sha256, Is.EqualTo(firstManifest.Units.Single().FileFingerprints.Single().Sha256));
+            });
+        }
+
+        [Test]
+        public async Task Backup_ChangedOneMod_ArchivesOnlyThatMod()
+        {
+            Write("ModA/a.txt", "A");
+            Write("ModB/b.txt", "B");
+            var profile = CreateProfile();
+            var first = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var firstManifest = (await _restore.ReadManifestAsync(first.Results.Single().BackupDirectory))!;
+
+            Write("ModB/b.txt", "updated B");
+            var second = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var secondManifest = (await _restore.ReadManifestAsync(second.Results.Single().BackupDirectory))!;
+            var oldA = firstManifest.Units.Single(unit => unit.RelativeDestination == "ModA");
+            var newA = secondManifest.Units.Single(unit => unit.RelativeDestination == "ModA");
+            var oldB = firstManifest.Units.Single(unit => unit.RelativeDestination == "ModB");
+            var newB = secondManifest.Units.Single(unit => unit.RelativeDestination == "ModB");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(second.FilesArchived, Is.EqualTo(1));
+                Assert.That(second.ModsArchived, Is.EqualTo(1));
+                Assert.That(second.ModsReused, Is.EqualTo(1));
+                Assert.That(newA.ArchiveFile, Is.EqualTo(oldA.ArchiveFile));
+                Assert.That(newB.ArchiveFile, Is.Not.EqualTo(oldB.ArchiveFile));
+            });
+        }
+
+        [Test]
+        public async Task Backup_RemovedMod_IsOmittedFromNewSnapshotButOldSnapshotRemainsRestorable()
+        {
+            Write("ModA/a.txt", "A");
+            Write("ModB/b.txt", "B");
+            var profile = CreateProfile();
+            var first = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var firstDirectory = first.Results.Single().BackupDirectory;
+            File.Delete(Path.Combine(_staging, "ModB", "b.txt"));
+            Directory.Delete(Path.Combine(_staging, "ModB"));
+
+            var second = await _runner.RunBackupAsync([profile], StagingOnly(), _settings);
+            var secondManifest = (await _restore.ReadManifestAsync(second.Results.Single().BackupDirectory))!;
+            var firstManifest = await _restore.ReadManifestAsync(firstDirectory);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(second.ModsRemoved, Is.EqualTo(1));
+                Assert.That(secondManifest.Units.Select(unit => unit.RelativeDestination), Is.EqualTo(new[] { "ModA" }));
+                Assert.That(firstManifest!.Units, Has.Count.EqualTo(2));
             });
         }
 
@@ -306,6 +414,12 @@ namespace UniversalBackupTool.Tests
                 Assert.That(Directory.GetFiles(dir, "*.zip", SearchOption.AllDirectories), Has.Length.EqualTo(1));
                 Assert.That(manifest!.IsMonolithic, Is.True);
             });
+
+            var profile = CreateProfile();
+            File.WriteAllText(Path.Combine(_staging, "ModA", "a.txt"), "changed");
+            var plan = _restore.BuildPlan(manifest!, [profile], [BackupComponent.StagingFolders]);
+            await _restore.RestoreAsync(dir, plan);
+            Assert.That(File.ReadAllText(Path.Combine(_staging, "ModA", "a.txt")), Is.EqualTo("A"));
         }
 
         [Test]
@@ -390,17 +504,27 @@ namespace UniversalBackupTool.Tests
                 Assert.That(_jobState.Saved!.FailedFiles, Has.Count.EqualTo(1));
             });
 
+            var pendingMove = _jobState.Saved!.PendingArchiveMoves.Single();
+            File.Move(pendingMove.TemporaryPath, pendingMove.FinalPath);
+
+            var snapshotDirectory = batch.Results.Single().BackupDirectory;
+            Assert.That(await _restore.ReadManifestAsync(snapshotDirectory), Is.Null);
+
             var resumed = await _runner.ResumeBackupAsync(_jobState.Saved!, _settings);
-            var archive = _jobState.Saved is null ? batch.Results.Single().BackupDirectory : string.Empty;
+            var manifest = await _restore.ReadManifestAsync(snapshotDirectory);
+            var unit = manifest!.Units.Single();
+            var archiveRoot = Path.GetFullPath(Path.Combine(snapshotDirectory, unit.ArchiveRootRelativePath));
 
             Assert.Multiple(() =>
             {
                 Assert.That(resumed.IsComplete, Is.True);
                 Assert.That(_jobState.Saved, Is.Null);
                 Assert.That(_jobState.DeleteCount, Is.EqualTo(1));
+                Assert.That(manifest.IsComplete, Is.True);
+                Assert.That(manifest.Units.SelectMany(item => item.FileFingerprints).All(file => file.Sha256.Length == 64), Is.True);
             });
 
-            using var zip = ZipFile.OpenRead(Path.Combine(archive, "staging", "ModA.zip"));
+            using var zip = ZipFile.OpenRead(Path.Combine(archiveRoot, unit.ArchiveFile));
             Assert.That(zip.Entries.Select(e => e.FullName), Is.EquivalentTo(new[] { "a.txt", "locked.txt" }));
         }
 
@@ -499,6 +623,22 @@ namespace UniversalBackupTool.Tests
                 async () => await _restore.RestoreAsync(backupDir, [new RestorePlanItem(unit, destination, destination, true)]),
                 Throws.Exception);
             await Task.CompletedTask;
+        }
+
+        [Test]
+        public void Restore_ArchiveRootTraversal_IsRejected()
+        {
+            var backupDir = Path.Combine(_root, "snapshot");
+            Directory.CreateDirectory(backupDir);
+            var destination = Path.Combine(_root, "dest");
+            var unit = new BackupManifestUnit(BackupComponent.StagingFolders, "outside.zip", string.Empty, destination, string.Empty)
+            {
+                ArchiveRootRelativePath = "..\\.."
+            };
+
+            Assert.That(
+                async () => await _restore.RestoreAsync(backupDir, [new RestorePlanItem(unit, destination, destination, true)]),
+                Throws.InstanceOf<InvalidDataException>());
         }
     }
 }
