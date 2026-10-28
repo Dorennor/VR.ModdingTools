@@ -9,6 +9,8 @@ namespace UniversalBackupTool.Model.Models.Settings
     {
         public List<CompressionRule> CompressionRules { get; init; } = CompressionRules ?? DefaultCompressionRules();
 
+        public List<string> GlobalIgnorePatterns { get; init; } = [];
+
         public static AppSettings Default(string googleDriveBackupPath) => new(
             GoogleDriveBackupPath: googleDriveBackupPath,
             SafetyBackupRetentionDays: 14,

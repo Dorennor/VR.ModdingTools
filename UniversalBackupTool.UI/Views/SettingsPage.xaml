@@ -1,0 +1,193 @@
+<Page
+    x:Class="UniversalBackupTool.UI.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
+    Title="Settings"
+    ScrollViewer.CanContentScroll="False"
+    d:DesignHeight="900"
+    d:DesignWidth="900"
+    mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,20,40,40" helpers:StackPanelSpacing.Spacing="0">
+            <Grid Margin="0,0,0,24">
+                <ui:TextBlock
+                    VerticalAlignment="Center"
+                    FontTypography="Title"
+                    Text="Settings" />
+                <ui:Button
+                    HorizontalAlignment="Right"
+                    Appearance="Primary"
+                    Command="{Binding SaveCommand}"
+                    Content="Save Settings"
+                    Icon="{ui:SymbolIcon Save24}" />
+            </Grid>
+
+            <ui:InfoBar
+                Margin="0,0,0,16"
+                IsClosable="False"
+                IsOpen="{Binding HasError}"
+                Message="{Binding ErrorMessage}"
+                Severity="Error"
+                Title="Error" />
+
+            <ui:InfoBar
+                Margin="0,0,0,16"
+                IsClosable="False"
+                IsOpen="{Binding HasStatusMessage}"
+                Message="{Binding StatusMessage}"
+                Severity="Success"
+                Title="Saved" />
+
+            <ui:Card Margin="0,0,0,24" Padding="20">
+                <StackPanel helpers:StackPanelSpacing.Spacing="12">
+                    <ui:TextBlock FontTypography="Subtitle" Text="Storage Locations" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBlock VerticalAlignment="Center" Text="Google Drive Path:" />
+                        <ui:TextBox Grid.Column="1" Text="{Binding GoogleDriveBackupPath, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:Button
+                            Grid.Column="2"
+                            Margin="12,0,0,0"
+                            Command="{Binding BrowseGoogleDrivePathCommand}"
+                            Content="Browse"
+                            Icon="{ui:SymbolIcon FolderOpen24}" />
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+
+            <ui:Card Margin="0,0,0,24" Padding="20">
+                <StackPanel helpers:StackPanelSpacing.Spacing="12">
+                    <Grid>
+                        <ui:TextBlock
+                            VerticalAlignment="Center"
+                            FontTypography="Subtitle"
+                            Text="Dynamic Compression Mapping" />
+                        <ui:Button
+                            HorizontalAlignment="Right"
+                            Command="{Binding AddRuleCommand}"
+                            Content="Add Rule"
+                            Icon="{ui:SymbolIcon Add24}" />
+                    </Grid>
+                    <ui:TextBlock
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="Optimize speed by disabling compression for large files. The smallest matching size limit is used for each file." />
+
+                    <ItemsControl ItemsSource="{Binding CompressionRules}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border
+                                    Margin="0,0,0,12"
+                                    Padding="12"
+                                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <ui:TextBlock VerticalAlignment="Center" Text="Files up to" />
+                                            <ui:NumberBox
+                                                Width="130"
+                                                Margin="12,0"
+                                                MaxDecimalPlaces="0"
+                                                Minimum="1"
+                                                SpinButtonPlacementMode="Hidden"
+                                                Value="{Binding MaxSizeMegabytes, UpdateSourceTrigger=PropertyChanged}" />
+                                            <ui:TextBlock VerticalAlignment="Center" Text="MB" />
+                                        </StackPanel>
+
+                                        <ui:TextBlock VerticalAlignment="Center" Text="Larger files (no upper limit)">
+                                            <ui:TextBlock.Style>
+                                                <Style TargetType="ui:TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:TextBlock.Style>
+                                        </ui:TextBlock>
+
+                                        <ComboBox
+                                            Grid.Column="1"
+                                            Width="180"
+                                            DisplayMemberPath="DisplayName"
+                                            ItemsSource="{Binding Options}"
+                                            SelectedValue="{Binding Level, Mode=TwoWay}"
+                                            SelectedValuePath="Level" />
+
+                                        <Button
+                                            Grid.Column="2"
+                                            Margin="12,0,0,0"
+                                            Command="{Binding DataContext.RemoveRuleCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Remove rule">
+                                            <ui:SymbolIcon Symbol="Delete24" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ui:Card>
+
+            <ui:Card Padding="20">
+                <StackPanel helpers:StackPanelSpacing.Spacing="20">
+                    <ui:TextBlock FontTypography="Subtitle" Text="Advanced" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <ui:TextBlock
+                            Width="200"
+                            VerticalAlignment="Center"
+                            Text="Safety Backup Retention:" />
+                        <ui:NumberBox
+                            Width="110"
+                            MaxDecimalPlaces="0"
+                            Minimum="1"
+                            SpinButtonPlacementMode="Hidden"
+                            Value="{Binding SafetyBackupRetentionDays, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:TextBlock
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="days" />
+                    </StackPanel>
+
+                    <StackPanel helpers:StackPanelSpacing.Spacing="8">
+                        <ui:TextBlock Text="Global Ignore Patterns (One per line)" />
+                        <ui:TextBox
+                            Height="100"
+                            AcceptsReturn="True"
+                            FontFamily="Consolas"
+                            Text="{Binding GlobalIgnorePatternsText, UpdateSourceTrigger=PropertyChanged}"
+                            VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+                </StackPanel>
+            </ui:Card>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

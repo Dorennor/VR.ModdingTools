@@ -1,0 +1,130 @@
+﻿<Page
+    x:Class="UniversalBackupTool.UI.Views.VanillaPurgePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="Vanilla &amp; Purge"
+    ScrollViewer.CanContentScroll="False"
+    d:DesignHeight="700"
+    d:DesignWidth="900"
+    mc:Ignorable="d">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </Page.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,20,40,40" helpers:StackPanelSpacing.Spacing="0">
+            <ui:TextBlock FontTypography="Title" Text="Vanilla State &amp; Purge" />
+            <ui:TextBlock
+                Margin="0,4,0,24"
+                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                Text="Generate baseline snapshots and safely clean game directories." />
+
+            <ui:InfoBar
+                Margin="0,0,0,16"
+                IsClosable="False"
+                IsOpen="{Binding HasError}"
+                Message="{Binding ErrorMessage}"
+                Severity="Error"
+                Title="Error" />
+
+            <ui:InfoBar
+                Margin="0,0,0,16"
+                IsClosable="False"
+                IsOpen="{Binding HasStatusMessage}"
+                Message="{Binding StatusMessage}"
+                Severity="Success"
+                Title="Done" />
+
+            <ui:TextBlock
+                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                Text="No profile with a game root folder yet. Add one on the Dashboard."
+                Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}" />
+
+            <ui:Card Padding="20">
+                <StackPanel helpers:StackPanelSpacing.Spacing="12">
+                    <Grid>
+                        <ui:TextBlock
+                            VerticalAlignment="Center"
+                            FontTypography="Subtitle"
+                            Text="Select Target Profile" />
+                        <ComboBox
+                            Width="250"
+                            HorizontalAlignment="Right"
+                            DisplayMemberPath="GameName"
+                            ItemsSource="{Binding Profiles}"
+                            SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" />
+                    </Grid>
+
+                    <ui:TextBlock
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="{Binding GameRootPath}"
+                        TextWrapping="Wrap" />
+
+                    <StackPanel Margin="0,16,0,0" helpers:StackPanelSpacing.Spacing="8">
+                        <ui:TextBlock FontTypography="BodyStrong" Text="Baseline Snapshot" />
+                        <ui:TextBlock
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="{Binding SnapshotStatus}"
+                            TextWrapping="Wrap" />
+                        <ui:Button
+                            Command="{Binding CreateSnapshotCommand}"
+                            Content="Create / Update Snapshot"
+                            Icon="{ui:SymbolIcon Camera24}"
+                            IsEnabled="{Binding HasProfileSelected}" />
+                    </StackPanel>
+
+                    <Separator Margin="0,12,0,12" />
+
+                    <StackPanel helpers:StackPanelSpacing.Spacing="8">
+                        <ui:TextBlock
+                            FontTypography="BodyStrong"
+                            Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                            Text="Purge Mod Files" />
+                        <ui:TextBlock
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap">
+                            Compares Game Root against Baseline Snapshot. Deletes any unregistered files (configs, logs, manual mods).
+                            <LineBreak />
+                            <Run FontWeight="SemiBold" Text="A Safety Backup will be created before deletion." />
+                        </ui:TextBlock>
+                        <StackPanel Margin="0,7,0,0" Orientation="Horizontal">
+                            <ui:Button
+                                Command="{Binding PreviewCommand}"
+                                Content="Preview"
+                                Icon="{ui:SymbolIcon Eye24}"
+                                IsEnabled="{Binding HasSnapshot}" />
+                            <ui:Button
+                                Margin="12,0,0,0"
+                                Appearance="Danger"
+                                Command="{Binding PurgeCommand}"
+                                Content="Execute Safe Purge"
+                                Icon="{ui:SymbolIcon Warning24}"
+                                IsEnabled="{Binding HasSnapshot}" />
+                        </StackPanel>
+
+                        <ui:TextBlock
+                            Margin="0,8,0,0"
+                            FontTypography="BodyStrong"
+                            Text="{Binding PreviewSummary}"
+                            Visibility="{Binding HasPreviewSummary, Converter={StaticResource BoolToVisibility}}" />
+                        <ItemsControl ItemsSource="{Binding PreviewFiles}" Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock
+                                        Margin="0,1"
+                                        FontFamily="Consolas"
+                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                        Text="{Binding}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </ui:Card>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

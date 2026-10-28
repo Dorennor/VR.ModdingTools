@@ -8,5 +8,4 @@
   <Project Path="UniversalBackupTool.Tests/UniversalBackupTool.Tests.csproj" Id="880984c7-de77-49e6-bfac-30710686d153" />
   <Project Path="UniversalBackupTool.UI/UniversalBackupTool.UI.csproj" Id="a42f4cf4-f117-47d1-9a7d-a9d9ba7752ff" />
   <Project Path="UniversalBackupTool.ViewModels/UniversalBackupTool.ViewModel.csproj" Id="08e6b11b-6322-4dbf-80c8-c078e3298fe4" />
-  <Project Path="VR.ModdingTools.VortexBackup/VR.ModdingTools.VortexBackup.csproj" />
 </Solution>
