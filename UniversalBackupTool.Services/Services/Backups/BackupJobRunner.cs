@@ -82,12 +82,39 @@ namespace UniversalBackupTool.Service.Services.Backups
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var profile = profiles[index];
-                var prefix = profiles.Count > 1 ? $"{profile.GameName} ({index + 1}/{profiles.Count})" : profile.GameName;
+                var profilePrefix = profiles.Count > 1 ? $"{profile.GameName} ({index + 1}/{profiles.Count})" : profile.GameName;
+                var profileResults = new List<BackupResult>();
+                var skippedComponentWarnings = new List<string>();
 
-                var result = await BackupProfileAsync(profile, options, settings, prefix, progress, cancellationToken);
+                foreach (var componentOptions in ExpandPerComponentOptions(options))
+                {
+                    var componentLabel = DescribeComponent(componentOptions);
+                    var prefix = $"{profilePrefix} - {componentLabel}";
 
-                results.Add(result);
-                failedFiles.AddRange(result.FailedFiles);
+                    try
+                    {
+                        var result = await BackupProfileAsync(profile, componentOptions, settings, prefix, progress, cancellationToken);
+                        profileResults.Add(result);
+                    }
+                    catch (InvalidOperationException exception) when (exception.Message.StartsWith("Nothing to back up for ", StringComparison.Ordinal))
+                    {
+                        skippedComponentWarnings.Add(exception.Message);
+                    }
+                }
+
+                if (profileResults.Count == 0)
+                {
+                    var message = skippedComponentWarnings.Count > 0
+                        ? string.Join(" ", skippedComponentWarnings)
+                        : $"Nothing to back up for \"{profile.GameName}\".";
+                    throw new InvalidOperationException(message);
+                }
+
+                if (skippedComponentWarnings.Count > 0)
+                    profileResults[0].Warnings.AddRange(skippedComponentWarnings);
+
+                results.AddRange(profileResults);
+                failedFiles.AddRange(profileResults.SelectMany(result => result.FailedFiles));
             }
 
             if (failedFiles.Count > 0)
@@ -109,6 +136,42 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
 
             return new BackupBatchResult(results, failedFiles, results.Sum(result => result.FilesArchived));
+        }
+
+        private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options)
+        {
+            var expanded = new List<BackupOptions>();
+
+            if (options.IncludeStaging)
+                expanded.Add(new BackupOptions(true, false, false, false, options.Monolithic));
+
+            if (options.IncludeGameConfigs)
+                expanded.Add(new BackupOptions(false, true, false, false, options.Monolithic));
+
+            if (options.IncludeVortexAppData)
+                expanded.Add(new BackupOptions(false, false, true, false, options.Monolithic));
+
+            if (options.IncludeCustomFolders)
+                expanded.Add(new BackupOptions(false, false, false, true, options.Monolithic));
+
+            return expanded;
+        }
+
+        private static string DescribeComponent(BackupOptions options)
+        {
+            if (options.IncludeStaging)
+                return "Staging";
+
+            if (options.IncludeGameConfigs)
+                return "Configs";
+
+            if (options.IncludeVortexAppData)
+                return "Vortex AppData";
+
+            if (options.IncludeCustomFolders)
+                return "Custom Folders";
+
+            return "Unknown";
         }
 
         public async Task<BackupBatchResult> ResumeBackupAsync(
@@ -247,10 +310,11 @@ namespace UniversalBackupTool.Service.Services.Backups
                 throw new InvalidOperationException($"Nothing to back up for \"{profile.GameName}\".{reason}");
             }
 
-            var gameDirectory = Path.Combine(settings.GoogleDriveBackupPath, SanitizeFileName(profile.GameName));
-            var previousManifest = await LoadLatestCompleteManifestAsync(gameDirectory, profile, cancellationToken);
+            var component = units[0].Manifest.Component;
+            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile.GameName, component);
+            var previousManifest = await LoadLatestCompleteManifestAsync(componentRootDirectory, profile, cancellationToken);
             var previousUnits = previousManifest?.Manifest.Units ?? [];
-            var archiveRoot = Path.Combine(gameDirectory, "_archives");
+            var archiveRoot = Path.Combine(componentRootDirectory, "_archives");
             var plans = new List<ArchivePlan>();
 
             foreach (var unit in units)
@@ -276,13 +340,10 @@ namespace UniversalBackupTool.Service.Services.Backups
                     }
                 }
 
-                var archiveIdentity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{GetUnitKey(unit.Manifest)}|{Guid.NewGuid():N}")));
-                var archiveRelativePath = $"_archives/{archiveIdentity}.zip";
-                var finalArchivePath = Path.Combine(archiveRoot, archiveIdentity + ".zip");
+                var (archiveRelativePath, finalArchivePath) = CreateArchivePath(archiveRoot, unit.Manifest);
                 plans.Add(new ArchivePlan(unit, files, directories, prior, archiveRelativePath, finalArchivePath, "..", false));
             }
 
-            var backupDirectory = CreateBackupDirectory(settings.GoogleDriveBackupPath, profile.GameName);
             var failedFiles = new List<FailedBackupFile>();
             var pendingMoves = new List<PendingArchiveMove>();
             var temporaryArchives = new List<string>();
@@ -293,6 +354,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             var tracker = new ProgressTracker($"{progressLabel}: checking and archiving changed files", totalBytes, writePlans.Sum(plan => plan.Unit.Files.Count), progress);
             var modsArchived = 0;
             var modsReused = 0;
+            var backupDirectory = CreateBackupDirectory(componentRootDirectory);
 
             try
             {
@@ -401,6 +463,9 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 await WriteManifestAsync(backupDirectory, manifest, cancellationToken);
 
+                if (failedFiles.Count == 0)
+                    await CleanupRetainedBackupsAsync(backupDirectory, settings.MaxPreservedBackupsPerGame, warnings, cancellationToken);
+
                 return new BackupResult(profile.GameName, backupDirectory, filesToArchive, warnings, failedFiles)
                 {
                     ManifestPath = Path.Combine(backupDirectory, BackupManifest.FileName),
@@ -441,7 +506,9 @@ namespace UniversalBackupTool.Service.Services.Backups
                 throw new InvalidOperationException($"Nothing to back up for \"{profile.GameName}\".{reason}");
             }
 
-            var backupDirectory = CreateBackupDirectory(settings.GoogleDriveBackupPath, profile.GameName);
+            var component = units[0].Manifest.Component;
+            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile.GameName, component);
+            var backupDirectory = CreateBackupDirectory(componentRootDirectory);
 
             try
             {
@@ -476,6 +543,9 @@ namespace UniversalBackupTool.Service.Services.Backups
                 };
 
                 await WriteManifestAsync(backupDirectory, manifest, cancellationToken);
+
+                if (failedFiles.Count == 0)
+                    await CleanupRetainedBackupsAsync(backupDirectory, settings.MaxPreservedBackupsPerGame, warnings, cancellationToken);
 
                 return new BackupResult(profile.GameName, backupDirectory, archived, warnings, failedFiles)
                 {
@@ -703,6 +773,132 @@ namespace UniversalBackupTool.Service.Services.Backups
             return latest;
         }
 
+        private async Task CleanupRetainedBackupsAsync(
+            string currentBackupDirectory,
+            int maxPreservedBackups,
+            List<string> warnings,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(warnings);
+
+            if (maxPreservedBackups < 1)
+                return;
+
+            var gameDirectory = Path.GetDirectoryName(currentBackupDirectory);
+
+            if (string.IsNullOrWhiteSpace(gameDirectory) || !Directory.Exists(gameDirectory))
+                return;
+
+            var snapshotDirectories = Directory.EnumerateDirectories(gameDirectory)
+                .Where(directory => !string.Equals(Path.GetFileName(directory), "_archives", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (snapshotDirectories.Count <= maxPreservedBackups)
+                return;
+
+            var manifests = new List<LocatedManifest>();
+
+            foreach (var directory in snapshotDirectories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var manifestPath = Path.Combine(directory, BackupManifest.FileName);
+
+                if (!File.Exists(manifestPath))
+                    continue;
+
+                try
+                {
+                    await using var stream = File.OpenRead(manifestPath);
+                    var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken);
+
+                    if (manifest?.Units is null)
+                        continue;
+
+                    manifests.Add(new LocatedManifest(directory, manifest));
+                }
+                catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+                {
+                    warnings.Add($"Backup retention skipped snapshot due to unreadable manifest: {directory}");
+                }
+            }
+
+            var ordered = snapshotDirectories
+                .Select(directory =>
+                {
+                    var manifest = manifests.FirstOrDefault(item => string.Equals(item.Directory, directory, StringComparison.OrdinalIgnoreCase));
+                    var created = manifest?.Manifest.CreatedAt.UtcDateTime ?? Directory.GetLastWriteTimeUtc(directory);
+                    return (Directory: directory, Created: created, Manifest: manifest);
+                })
+                .OrderByDescending(item => item.Created)
+                .ToList();
+
+            var retained = ordered.Take(maxPreservedBackups).Select(item => item.Directory).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            retained.Add(currentBackupDirectory);
+
+            var toDelete = ordered
+                .Where(item => !retained.Contains(item.Directory))
+                .Select(item => item.Directory)
+                .ToList();
+
+            if (toDelete.Count == 0)
+                return;
+
+            var referencedArchives = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in ordered.Where(item => retained.Contains(item.Directory) && item.Manifest is not null))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                foreach (var unit in item.Manifest!.Manifest.Units)
+                {
+                    try
+                    {
+                        referencedArchives.Add(ResolveArchivePath(item.Directory, unit));
+                    }
+                    catch (InvalidDataException)
+                    {
+                        warnings.Add($"Backup retention skipped an invalid archive path in snapshot: {item.Directory}");
+                    }
+                }
+            }
+
+            foreach (var directory in toDelete)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    warnings.Add($"Backup retention could not remove old snapshot: {directory}");
+                }
+            }
+
+            var archiveDirectory = Path.Combine(gameDirectory, "_archives");
+
+            if (!Directory.Exists(archiveDirectory))
+                return;
+
+            foreach (var archiveFile in Directory.EnumerateFiles(archiveDirectory, "*.zip", SearchOption.TopDirectoryOnly))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (referencedArchives.Contains(Path.GetFullPath(archiveFile)))
+                    continue;
+
+                try
+                {
+                    File.Delete(archiveFile);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    warnings.Add($"Backup retention could not remove unused archive: {archiveFile}");
+                }
+            }
+        }
+
         private static string ResolveArchivePath(string manifestDirectory, BackupManifestUnit unit)
         {
             if (unit.ArchiveRootRelativePath is not "." and not "..")
@@ -883,22 +1079,42 @@ namespace UniversalBackupTool.Service.Services.Backups
             await WriteManifestFileAsync(manifestPath, manifest with { IsComplete = true, Units = units }, cancellationToken);
         }
 
-        private static string CreateBackupDirectory(string backupRoot, string gameName)
+        private static string CreateBackupDirectory(string backupRoot)
         {
-            var gameDirectory = Path.Combine(backupRoot, SanitizeFileName(gameName));
             var baseName = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-            var candidate = Path.Combine(gameDirectory, baseName);
+            var candidate = Path.Combine(backupRoot, baseName);
             var suffix = 1;
 
             while (Directory.Exists(candidate))
             {
                 suffix++;
-                candidate = Path.Combine(gameDirectory, $"{baseName}_{suffix}");
+                candidate = Path.Combine(backupRoot, $"{baseName}_{suffix}");
             }
 
             Directory.CreateDirectory(candidate);
 
             return candidate;
+        }
+
+        private static string GetComponentRootDirectory(string backupRoot, string gameName, BackupComponent component)
+        {
+            var gameDirectory = Path.Combine(backupRoot, SanitizeFileName(gameName));
+            var componentDirectory = Path.Combine(gameDirectory, GetComponentFolderName(component));
+            Directory.CreateDirectory(componentDirectory);
+
+            return componentDirectory;
+        }
+
+        private static string GetComponentFolderName(BackupComponent component)
+        {
+            return component switch
+            {
+                BackupComponent.StagingFolders => "staging",
+                BackupComponent.GameConfigs => "configs",
+                BackupComponent.VortexAppData => "appdata",
+                BackupComponent.CustomFolders => "custom",
+                _ => "misc"
+            };
         }
 
         private static Task WriteManifestAsync(string backupDirectory, BackupManifest manifest, CancellationToken cancellationToken)
@@ -936,6 +1152,39 @@ namespace UniversalBackupTool.Service.Services.Backups
         private static string GetLeafName(string path)
         {
             return Path.GetFileName(path.TrimEnd('\\', '/'));
+        }
+
+        private static (string RelativePath, string FullPath) CreateArchivePath(string archiveRoot, BackupManifestUnit unit)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(archiveRoot);
+            ArgumentNullException.ThrowIfNull(unit);
+
+            while (true)
+            {
+                var archiveIdentity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{GetUnitKey(unit)}|{Guid.NewGuid():N}")));
+                var shortHash = archiveIdentity[..12];
+                var friendlyName = BuildArchiveNamePrefix(unit);
+                var fileName = $"{friendlyName}__{shortHash}.zip";
+                var fullPath = Path.Combine(archiveRoot, fileName);
+
+                if (!File.Exists(fullPath))
+                    return ($"_archives/{fileName}", fullPath);
+            }
+        }
+
+        private static string BuildArchiveNamePrefix(BackupManifestUnit unit)
+        {
+            ArgumentNullException.ThrowIfNull(unit);
+
+            var baseName = unit.Component switch
+            {
+                BackupComponent.StagingFolders => string.IsNullOrWhiteSpace(unit.RelativeDestination)
+                    ? RootFilesArchiveName
+                    : unit.RelativeDestination,
+                _ => Path.GetFileNameWithoutExtension(unit.ArchiveFile)
+            };
+
+            return SanitizeFileName(baseName);
         }
 
         private static long GetLength(string path)

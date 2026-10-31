@@ -264,7 +264,9 @@ namespace UniversalBackupTool.Tests
                 {
                     Assert.That(actual, Is.Not.Null);
                     Assert.That(actual.GoogleDriveBackupPath, Is.EqualTo(expected.GoogleDriveBackupPath));
+                    Assert.That(actual.SafetyBackupPath, Is.EqualTo(expected.SafetyBackupPath));
                     Assert.That(actual.SafetyBackupRetentionDays, Is.EqualTo(expected.SafetyBackupRetentionDays));
+                    Assert.That(actual.MaxPreservedBackupsPerGame, Is.EqualTo(expected.MaxPreservedBackupsPerGame));
                     Assert.That(actual.CompressionRules.Count, Is.EqualTo(expected.CompressionRules.Count));
                 }
             }
@@ -291,6 +293,8 @@ namespace UniversalBackupTool.Tests
                     Assert.That(File.Exists(filePath), Is.True);
                     Assert.That(settings, Is.Not.Null);
                     Assert.That(settings.GoogleDriveBackupPath, Is.EqualTo(Path.Combine(AppContext.BaseDirectory, "Backups")));
+                    Assert.That(settings.MaxPreservedBackupsPerGame, Is.EqualTo(3));
+                    Assert.That(string.IsNullOrWhiteSpace(settings.SafetyBackupPath), Is.False);
                 }
             }
             finally
@@ -455,7 +459,7 @@ namespace UniversalBackupTool.Tests
             await File.WriteAllTextAsync(fileB, "second");
 
             var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "safety-root"));
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             var archivePath = await service.CreateSafetyBackupAsync(musicRoot, "pre-purge");
 
@@ -475,7 +479,7 @@ namespace UniversalBackupTool.Tests
             Directory.CreateDirectory(emptyRoot);
 
             var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "safety-root"));
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             var archivePath = await service.CreateSafetyBackupAsync(emptyRoot, "empty-backup");
 
@@ -487,13 +491,38 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task CreateSafetyBackupAsync_UsesConfiguredSafetyBackupPath()
+        {
+            var baseDirectory = TestDirectoryFactory.CreateTemporaryDirectory();
+            var source = Path.Combine(baseDirectory, "source");
+            Directory.CreateDirectory(source);
+            await File.WriteAllTextAsync(Path.Combine(source, "file.txt"), "x");
+
+            var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "app"));
+            var settingsStore = new JsonSettingsStore();
+            var customSafetyPath = Path.Combine(baseDirectory, "custom-safety");
+            var settingsPath = storageProvider.GetPaths().SettingsFilePath;
+            var settings = AppSettings.Default(Path.Combine(baseDirectory, "backups")) with { SafetyBackupPath = customSafetyPath };
+            await settingsStore.SaveAsync(settingsPath, settings);
+
+            var service = new SafetyBackupService(storageProvider, settingsStore);
+            var archivePath = await service.CreateSafetyBackupAsync(source, "configured");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.Exists(archivePath), Is.True);
+                Assert.That(archivePath.StartsWith(customSafetyPath, StringComparison.OrdinalIgnoreCase), Is.True);
+            });
+        }
+
+        [Test]
         public async Task CreateSafetyBackupAsync_WithNonexistentPath_ReturnsPathWithoutError()
         {
             var baseDirectory = TestDirectoryFactory.CreateTemporaryDirectory();
             var nonexistent = Path.Combine(baseDirectory, "nonexistent");
 
             var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "safety-root"));
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             var archivePath = await service.CreateSafetyBackupAsync(nonexistent, "no-source");
 
@@ -517,7 +546,7 @@ namespace UniversalBackupTool.Tests
             File.SetLastWriteTimeUtc(newFile, DateTime.Now.AddDays(-5));
 
             var settings = AppSettings.Default(baseDirectory);
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             await service.CleanupExpiredAsync(settings);
 
@@ -971,7 +1000,7 @@ namespace UniversalBackupTool.Tests
             await File.WriteAllTextAsync(specialFile, "content");
 
             var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "safety"));
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             var archivePath = await service.CreateSafetyBackupAsync(sourceDir, "special-test");
 
@@ -987,7 +1016,7 @@ namespace UniversalBackupTool.Tests
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "file.txt"), "content");
 
             var storageProvider = new FakeStoragePathsProvider(baseDirectory);
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             var path1 = await service.CreateSafetyBackupAsync(sourceDir, "backup");
             await Task.Delay(1100);
@@ -1008,7 +1037,7 @@ namespace UniversalBackupTool.Tests
             File.SetLastWriteTimeUtc(recentFile, DateTime.Now.AddDays(-1));
 
             var settings = AppSettings.Default(baseDirectory);
-            var service = new SafetyBackupService(storageProvider);
+            var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             await service.CleanupExpiredAsync(settings);
 

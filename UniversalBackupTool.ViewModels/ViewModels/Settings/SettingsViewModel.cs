@@ -38,6 +38,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         private double _safetyBackupRetentionDays = 14;
 
         [ObservableProperty]
+        private string _safetyBackupPath = string.Empty;
+
+        [ObservableProperty]
+        private double _maxPreservedBackupsPerGame = 3;
+
+        [ObservableProperty]
         private string _globalIgnorePatternsText = string.Empty;
 
         [ObservableProperty]
@@ -77,7 +83,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                                     var settings = baseSettings with
                                     {
                                         GoogleDriveBackupPath = GoogleDriveBackupPath.Trim(),
+                                        SafetyBackupPath = SafetyBackupPath.Trim(),
                                         SafetyBackupRetentionDays = (int)SafetyBackupRetentionDays,
+                                        MaxPreservedBackupsPerGame = (int)MaxPreservedBackupsPerGame,
                                         CompressionRules = CompressionRules
                                             .Select(rule => rule.ToModel())
                                             .OrderBy(rule => rule.MaxSizeBytes)
@@ -99,6 +107,15 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
 
             if (!string.IsNullOrWhiteSpace(selectedPath))
                 GoogleDriveBackupPath = selectedPath;
+        }
+
+        [RelayCommand]
+        private void BrowseSafetyBackupPath()
+        {
+            var selectedPath = _folderPickerService.PickFolder(SafetyBackupPath);
+
+            if (!string.IsNullOrWhiteSpace(selectedPath))
+                SafetyBackupPath = selectedPath;
         }
 
         [RelayCommand]
@@ -133,7 +150,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             _loadedSettings = settings;
 
             GoogleDriveBackupPath = settings.GoogleDriveBackupPath;
+            SafetyBackupPath = settings.SafetyBackupPath;
             SafetyBackupRetentionDays = settings.SafetyBackupRetentionDays;
+            MaxPreservedBackupsPerGame = settings.MaxPreservedBackupsPerGame;
             GlobalIgnorePatternsText = string.Join(Environment.NewLine, settings.GlobalIgnorePatterns);
 
             CompressionRules.Clear();
@@ -147,8 +166,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             if (string.IsNullOrWhiteSpace(GoogleDriveBackupPath))
                 return "Google Drive backup path cannot be empty.";
 
+            if (string.IsNullOrWhiteSpace(SafetyBackupPath))
+                return "Safety backup path cannot be empty.";
+
             if (SafetyBackupRetentionDays < 1 || SafetyBackupRetentionDays != Math.Floor(SafetyBackupRetentionDays))
                 return "Safety backup retention must be a whole number of days, at least 1.";
+
+            if (MaxPreservedBackupsPerGame < 1 || MaxPreservedBackupsPerGame != Math.Floor(MaxPreservedBackupsPerGame))
+                return "Max preserved backups per game must be a whole number, at least 1.";
 
             var limitedRules = CompressionRules.Where(rule => !rule.IsUnlimited).ToList();
 

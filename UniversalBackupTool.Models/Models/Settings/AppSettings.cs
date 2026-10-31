@@ -5,16 +5,26 @@ namespace UniversalBackupTool.Model.Models.Settings
     public record AppSettings(
         string GoogleDriveBackupPath,
         int SafetyBackupRetentionDays = 14,
-        List<CompressionRule>? CompressionRules = null)
+        List<CompressionRule>? CompressionRules = null,
+        string? SafetyBackupPath = null,
+        int MaxPreservedBackupsPerGame = 3)
     {
         public List<CompressionRule> CompressionRules { get; init; } = CompressionRules ?? DefaultCompressionRules();
 
         public List<string> GlobalIgnorePatterns { get; init; } = [];
 
+        public string SafetyBackupPath { get; init; } = string.IsNullOrWhiteSpace(SafetyBackupPath)
+            ? Path.Combine(AppContext.BaseDirectory, "SafetyBackups")
+            : SafetyBackupPath;
+
+        public int MaxPreservedBackupsPerGame { get; init; } = MaxPreservedBackupsPerGame < 1 ? 3 : MaxPreservedBackupsPerGame;
+
         public static AppSettings Default(string googleDriveBackupPath) => new(
             GoogleDriveBackupPath: googleDriveBackupPath,
             SafetyBackupRetentionDays: 14,
-            CompressionRules: DefaultCompressionRules());
+            CompressionRules: DefaultCompressionRules(),
+            SafetyBackupPath: Path.Combine(AppContext.BaseDirectory, "SafetyBackups"),
+            MaxPreservedBackupsPerGame: 3);
 
         public static List<CompressionRule> DefaultCompressionRules()
         {

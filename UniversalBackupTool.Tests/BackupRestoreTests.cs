@@ -293,6 +293,9 @@ namespace UniversalBackupTool.Tests
                 Assert.That(manifest.Units.Single(unit => unit.RelativeDestination == "ModA").FileFingerprints.Single().Sha256, Is.EqualTo(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("A")))));
                 Assert.That(manifest.Units.All(unit => File.Exists(Path.GetFullPath(Path.Combine(archiveRoot, unit.ArchiveFile)))), Is.True);
                 Assert.That(manifest.Units.All(unit => unit.ArchiveRootRelativePath == ".."), Is.True);
+                Assert.That(manifest.Units.Single(unit => unit.RelativeDestination == "ModA").ArchiveFile, Does.Match(@"^_archives/ModA__[A-F0-9]{12}\.zip$"));
+                Assert.That(manifest.Units.Single(unit => unit.RelativeDestination == "ModB").ArchiveFile, Does.Match(@"^_archives/ModB__[A-F0-9]{12}\.zip$"));
+                Assert.That(manifest.Units.Single(unit => unit.RelativeDestination == string.Empty).ArchiveFile, Does.Match(@"^_archives/_root_files__[A-F0-9]{12}\.zip$"));
                 Assert.That(File.Exists(Path.Combine(dir, BackupManifest.FileName)), Is.True);
                 Assert.That(Path.GetDirectoryName(dir), Does.StartWith(_drive));
             });
@@ -316,7 +319,7 @@ namespace UniversalBackupTool.Tests
                 Assert.That(second.ModsArchived, Is.Zero);
                 Assert.That(second.ModsReused, Is.EqualTo(2));
                 Assert.That(secondManifest.Units.Select(unit => unit.ArchiveFile), Is.EquivalentTo(firstManifest.Units.Select(unit => unit.ArchiveFile)));
-                Assert.That(Directory.GetFiles(Path.Combine(_drive, "Test Game", "_archives"), "*.zip"), Has.Length.EqualTo(2));
+                Assert.That(Directory.GetFiles(Path.Combine(_drive, "Test Game", "staging", "_archives"), "*.zip"), Has.Length.EqualTo(2));
             });
 
             File.WriteAllText(Path.Combine(_staging, "ModA", "a.txt"), "changed");
@@ -346,6 +349,41 @@ namespace UniversalBackupTool.Tests
                 Assert.That(second.ModsReused, Is.EqualTo(1));
                 Assert.That(secondManifest.Units.Single().ArchiveFile, Is.EqualTo(firstManifest.Units.Single().ArchiveFile));
                 Assert.That(secondManifest.Units.Single().FileFingerprints.Single().Sha256, Is.EqualTo(firstManifest.Units.Single().FileFingerprints.Single().Sha256));
+            });
+        }
+
+        [Test]
+        public async Task Backup_MultiComponent_UsesSeparateComponentFoldersAndRetentionPerComponent()
+        {
+            var appData = Path.Combine(_root, "appdata");
+            Directory.CreateDirectory(appData);
+
+            Write("ModA/a.txt", "A1");
+            File.WriteAllText(Path.Combine(appData, "state.json"), "S1");
+
+            var profile = CreateProfile() with { VortexAppDataPath = appData };
+            var options = new BackupOptions(true, false, true, false);
+            var settings = _settings with { MaxPreservedBackupsPerGame = 1 };
+
+            await _runner.RunBackupAsync([profile], options, settings);
+
+            Write("ModA/a.txt", "A2");
+            File.WriteAllText(Path.Combine(appData, "state.json"), "S2");
+
+            await _runner.RunBackupAsync([profile], options, settings);
+
+            var gameRoot = Path.Combine(_drive, "Test Game");
+            var stagingRoot = Path.Combine(gameRoot, "staging");
+            var appDataRoot = Path.Combine(gameRoot, "appdata");
+            var stagingSnapshots = Directory.GetDirectories(stagingRoot).Where(path => !string.Equals(Path.GetFileName(path), "_archives", StringComparison.OrdinalIgnoreCase)).ToList();
+            var appDataSnapshots = Directory.GetDirectories(appDataRoot).Where(path => !string.Equals(Path.GetFileName(path), "_archives", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Directory.Exists(stagingRoot), Is.True);
+                Assert.That(Directory.Exists(appDataRoot), Is.True);
+                Assert.That(stagingSnapshots, Has.Count.EqualTo(1));
+                Assert.That(appDataSnapshots, Has.Count.EqualTo(1));
             });
         }
 

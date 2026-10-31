@@ -7,9 +7,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
     Title="Settings"
-    ScrollViewer.CanContentScroll="False"
     d:DesignHeight="900"
     d:DesignWidth="900"
+    ScrollViewer.CanContentScroll="False"
     mc:Ignorable="d">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="40,20,40,40" helpers:StackPanelSpacing.Spacing="0">
@@ -27,36 +27,53 @@
             </Grid>
 
             <ui:InfoBar
+                Title="Error"
                 Margin="0,0,0,16"
                 IsClosable="False"
                 IsOpen="{Binding HasError}"
                 Message="{Binding ErrorMessage}"
-                Severity="Error"
-                Title="Error" />
+                Severity="Error" />
 
             <ui:InfoBar
+                Title="Saved"
                 Margin="0,0,0,16"
                 IsClosable="False"
                 IsOpen="{Binding HasStatusMessage}"
                 Message="{Binding StatusMessage}"
-                Severity="Success"
-                Title="Saved" />
+                Severity="Success" />
 
             <ui:Card Margin="0,0,0,24" Padding="20">
                 <StackPanel helpers:StackPanelSpacing.Spacing="12">
                     <ui:TextBlock FontTypography="Subtitle" Text="Storage Locations" />
+
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Center" Text="Google Drive Path:" />
+                        <ui:TextBlock VerticalAlignment="Center" Text="Backup Path:" />
                         <ui:TextBox Grid.Column="1" Text="{Binding GoogleDriveBackupPath, UpdateSourceTrigger=PropertyChanged}" />
                         <ui:Button
                             Grid.Column="2"
                             Margin="12,0,0,0"
                             Command="{Binding BrowseGoogleDrivePathCommand}"
+                            Content="Browse"
+                            Icon="{ui:SymbolIcon FolderOpen24}" />
+                    </Grid>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBlock VerticalAlignment="Center" Text="Safety Backups:" />
+                        <ui:TextBox Grid.Column="1" Text="{Binding SafetyBackupPath, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:Button
+                            Grid.Column="2"
+                            Margin="12,0,0,0"
+                            Command="{Binding BrowseSafetyBackupPathCommand}"
                             Content="Browse"
                             Icon="{ui:SymbolIcon FolderOpen24}" />
                     </Grid>
@@ -76,9 +93,7 @@
                             Content="Add Rule"
                             Icon="{ui:SymbolIcon Add24}" />
                     </Grid>
-                    <ui:TextBlock
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="Optimize speed by disabling compression for large files. The smallest matching size limit is used for each file." />
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Optimize speed by disabling compression for large files. The smallest matching size limit is used for each file." />
 
                     <ItemsControl ItemsSource="{Binding CompressionRules}">
                         <ItemsControl.ItemTemplate>
@@ -175,6 +190,24 @@
                             VerticalAlignment="Center"
                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                             Text="days" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal">
+                        <ui:TextBlock
+                            Width="200"
+                            VerticalAlignment="Center"
+                            Text="Preserve Backups:" />
+                        <ui:NumberBox
+                            Width="110"
+                            MaxDecimalPlaces="0"
+                            Minimum="1"
+                            SpinButtonPlacementMode="Hidden"
+                            Value="{Binding MaxPreservedBackupsPerGame, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:TextBlock
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="snapshots per game" />
                     </StackPanel>
 
                     <StackPanel helpers:StackPanelSpacing.Spacing="8">
