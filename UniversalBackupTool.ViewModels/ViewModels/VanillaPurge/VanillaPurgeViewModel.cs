@@ -17,8 +17,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 {
     public sealed partial class VanillaPurgeViewModel : BasicViewModel
     {
-        private const int MaxPreviewItems = 500;
-
         private readonly IProfileStore _profileStore;
         private readonly ISnapshotService _snapshotService;
         private readonly ISnapshotStore _snapshotStore;
@@ -55,7 +53,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
 
-        public ObservableCollection<string> PreviewFiles { get; } = [];
+        /// <summary>
+        /// All unregistered files. Replaced as a whole (not item by item) so large lists cost one UI update; the view virtualizes it.
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasPreview))]
+        private IReadOnlyList<string> _previewFiles = [];
 
         public bool HasNoProfiles => Profiles.Count == 0;
 
@@ -269,25 +272,17 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         private void ShowPreview(List<string> unregistered)
         {
-            PreviewFiles.Clear();
-
-            foreach (var path in unregistered.Take(MaxPreviewItems))
-                PreviewFiles.Add(path);
+            PreviewFiles = unregistered;
 
             PreviewSummary = unregistered.Count == 0
                 ? "No unregistered files found."
-                : unregistered.Count > MaxPreviewItems
-                    ? $"{unregistered.Count:N0} unregistered files would be deleted (showing first {MaxPreviewItems})."
-                    : $"{unregistered.Count:N0} unregistered files would be deleted.";
-
-            OnPropertyChanged(nameof(HasPreview));
+                : $"{unregistered.Count:N0} unregistered files would be deleted.";
         }
 
         private void ClearPreview()
         {
-            PreviewFiles.Clear();
+            PreviewFiles = [];
             PreviewSummary = null;
-            OnPropertyChanged(nameof(HasPreview));
         }
 
         private async Task RefreshSelectionAsync()
