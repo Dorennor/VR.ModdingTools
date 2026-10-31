@@ -1,0 +1,9 @@
+<Project>
+  <!--
+    Release builds embed debug symbols in every assembly, so the portable single-file publish is just one .exe
+    (no loose .pdb files) while exception details in the log files still include file names and line numbers.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+</Project>

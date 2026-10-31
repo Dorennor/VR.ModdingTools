@@ -100,7 +100,7 @@ namespace UniversalBackupTool.Services.Backups
             if (!directory.Exists)
                 return;
 
-            var cutoff = DateTime.Now.AddDays(-settings.SafetyBackupRetentionDays);
+            var cutoff = DateTime.UtcNow.AddDays(-settings.SafetyBackupRetentionDays);
             var files = directory.EnumerateFiles("*.zip", SearchOption.AllDirectories);
 
             foreach (var file in files)

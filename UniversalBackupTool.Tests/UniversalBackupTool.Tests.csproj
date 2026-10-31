@@ -26,6 +26,7 @@
     <ProjectReference Include="..\UniversalBackupTool.Interfaces\UniversalBackupTool.Interface.csproj" />
     <ProjectReference Include="..\UniversalBackupTool.Models\UniversalBackupTool.Model.csproj" />
     <ProjectReference Include="..\UniversalBackupTool.Services\UniversalBackupTool.Service.csproj" />
+    <ProjectReference Include="..\UniversalBackupTool.ViewModels\UniversalBackupTool.ViewModel.csproj" />
   </ItemGroup>
 
   <ItemGroup>

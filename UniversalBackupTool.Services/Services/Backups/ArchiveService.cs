@@ -1,7 +1,10 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 
+using static System.FormattableString;
+
 using UniversalBackupTool.Interface.Interfaces.Backups;
+using UniversalBackupTool.Interface.Interfaces.Logging;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Settings;
 
@@ -19,6 +22,20 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         private sealed record FileWriteOutcome(FileOutcome Outcome, string? Sha256);
+
+        private readonly ILogFileWriter? _log;
+
+        public ArchiveService()
+            : this(null)
+        {
+        }
+
+        /// <param name="log">Receives an "Archiving" and an "Archived" line (with duration, size, speed and compression
+        /// level) for every file, so slow files can be found in the log and their compression rule adjusted.</param>
+        public ArchiveService(ILogFileWriter? log)
+        {
+            _log = log;
+        }
 
         public Task<ArchiveWriteResult> CreateArchiveAsync(
             string archivePath,
@@ -40,7 +57,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             return WriteAsync(archivePath, files, settings, ZipArchiveMode.Update, progress, cancellationToken);
         }
 
-        private static async Task<ArchiveWriteResult> WriteAsync(
+        private async Task<ArchiveWriteResult> WriteAsync(
             string archivePath,
             IReadOnlyList<ArchiveFileItem> files,
             AppSettings settings,
@@ -92,7 +109,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             return new ArchiveWriteResult(written, failed) { FileHashes = hashes };
         }
 
-        private static async Task<FileWriteOutcome> TryAddFileAsync(
+        private async Task<FileWriteOutcome> TryAddFileAsync(
             ZipArchive zipArchive,
             ArchiveFileItem item,
             AppSettings settings,
@@ -109,24 +126,31 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
             catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
+                _log?.AppendDetail($"Skipped (file no longer exists): {item.SourcePath}");
                 progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
                 return new FileWriteOutcome(FileOutcome.Missing, null);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                _log?.AppendDetail($"Skipped (in use or access denied, will be retried by Continue Backup): {item.SourcePath} - {exception.Message}");
                 progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
                 return new FileWriteOutcome(FileOutcome.Failed, null);
             }
 
             var readFailed = false;
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var length = input.Length;
+            var level = GetCompressionLevel(length, settings);
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            _log?.AppendDetail(Invariant($"Archiving: {item.SourcePath} ({FormatSize(length)}, level {level})"));
 
             await using (input)
             {
                 if (replaceExisting)
                     zipArchive.GetEntry(item.EntryName)?.Delete();
 
-                var entry = zipArchive.CreateEntry(item.EntryName, GetCompressionLevel(input.Length, settings));
+                var entry = zipArchive.CreateEntry(item.EntryName, level);
                 entry.LastWriteTime = ClampToZipRange(File.GetLastWriteTime(item.SourcePath));
 
                 await using var output = entry.Open();
@@ -159,11 +183,40 @@ namespace UniversalBackupTool.Service.Services.Backups
                 }
             }
 
+            // The entry stream is closed above, so the elapsed time includes finishing the compression.
+            stopwatch.Stop();
+
+            if (readFailed)
+            {
+                _log?.AppendDetail(Invariant($"Failed while reading (in use, will be retried by Continue Backup): {item.SourcePath} after {stopwatch.Elapsed.TotalSeconds:0.000} s"));
+            }
+            else
+            {
+                var seconds = stopwatch.Elapsed.TotalSeconds;
+                var speed = seconds > 0 ? $", {FormatSize((long)(length / seconds))}/s" : string.Empty;
+                _log?.AppendDetail(Invariant($"Archived:  {item.SourcePath} in {seconds:0.000} s ({FormatSize(length)}{speed}, level {level})"));
+            }
+
             progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
 
             return readFailed
                 ? new FileWriteOutcome(FileOutcome.Failed, null)
                 : new FileWriteOutcome(FileOutcome.Written, Convert.ToHexString(hash.GetHashAndReset()));
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            double value = bytes;
+            var unit = 0;
+
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return unit == 0 ? Invariant($"{bytes} B") : Invariant($"{value:0.0} {units[unit]}");
         }
 
         private static CompressionLevel GetCompressionLevel(long fileLength, AppSettings settings)

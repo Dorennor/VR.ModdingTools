@@ -20,6 +20,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         private readonly ISystemPathsProvider _systemPathsProvider;
         private readonly IAppStoragePathsProvider _storagePathsProvider;
         private readonly IFolderPickerService _folderPickerService;
+        private readonly IFilePickerService _filePickerService;
 
         private Guid? _editingProfileId;
         private BackupProfile? _editingOriginal;
@@ -30,6 +31,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             ISystemPathsProvider systemPathsProvider,
             IAppStoragePathsProvider storagePathsProvider,
             IFolderPickerService folderPickerService,
+            IFilePickerService filePickerService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -39,9 +41,18 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             _systemPathsProvider = systemPathsProvider ?? throw new ArgumentNullException(nameof(systemPathsProvider));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
             _folderPickerService = folderPickerService ?? throw new ArgumentNullException(nameof(folderPickerService));
+            _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
 
             AvailableDrives = _systemPathsProvider.GetAvailableDrives();
+            EditCustomPaths.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoEditCustomPaths));
         }
+
+        /// <summary>
+        /// Custom paths of the profile being edited: folders or single files, each backed up as its own unit.
+        /// </summary>
+        public ObservableCollection<CustomPathItemViewModel> EditCustomPaths { get; } = [];
+
+        public bool HasNoEditCustomPaths => EditCustomPaths.Count == 0;
 
         public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
 
@@ -64,9 +75,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         [ObservableProperty]
         private string _editVortexAppDataPath = string.Empty;
-
-        [ObservableProperty]
-        private string _editCustomFoldersText = string.Empty;
 
         [ObservableProperty]
         private bool _editUseIgnoreList = true;
@@ -140,7 +148,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditVortexStagingPath = string.Empty;
             EditGameRootPath = string.Empty;
             EditVortexAppDataPath = _systemPathsProvider.GetDefaultVortexAppDataPath();
-            EditCustomFoldersText = string.Empty;
+            SetEditCustomPaths([]);
             EditUseIgnoreList = true;
 
             IsFindVisible = false;
@@ -164,7 +172,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditVortexStagingPath = profile.VortexStagingPath ?? string.Empty;
             EditGameRootPath = profile.GameRootPath ?? string.Empty;
             EditVortexAppDataPath = profile.VortexAppDataPath ?? string.Empty;
-            EditCustomFoldersText = string.Join(Environment.NewLine, profile.CustomFolders);
+            SetEditCustomPaths(profile.CustomFolders);
             EditUseIgnoreList = profile.UseIgnoreList;
 
             IsFindVisible = false;
@@ -181,7 +189,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private Task SaveProfileAsync() => RunBusyAsync(async () =>
                 {
-                    var customFolders = ParseLines(EditCustomFoldersText);
+                    var customFolders = EditCustomPaths
+                        .Select(item => item.Path.Trim())
+                        .Where(path => path.Length > 0)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
                     var validationError = ValidateEditor(customFolders);
 
                     if (validationError is not null)
@@ -250,15 +262,50 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private void AddCustomFolder()
         {
-            PickInto(null, path =>
-            {
-                var existing = ParseLines(EditCustomFoldersText);
+            PickInto(LastCustomDirectory(), AddCustomPath);
+        }
 
-                if (!existing.Contains(path, StringComparer.OrdinalIgnoreCase))
-                    existing.Add(path);
+        [RelayCommand]
+        private void AddCustomFiles()
+        {
+            foreach (var path in _filePickerService.PickFiles(LastCustomDirectory()))
+                AddCustomPath(path);
+        }
 
-                EditCustomFoldersText = string.Join(Environment.NewLine, existing);
-            });
+        [RelayCommand]
+        private void RemoveCustomPath(CustomPathItemViewModel? item)
+        {
+            if (item is not null)
+                EditCustomPaths.Remove(item);
+        }
+
+        private void AddCustomPath(string path)
+        {
+            if (EditCustomPaths.Any(item => string.Equals(item.Path.Trim(), path.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            EditCustomPaths.Add(new CustomPathItemViewModel(path, _pathDriveService));
+        }
+
+        private void SetEditCustomPaths(IEnumerable<string> paths)
+        {
+            EditCustomPaths.Clear();
+
+            foreach (var path in paths)
+                AddCustomPath(path);
+        }
+
+        /// <summary>
+        /// Start the pickers where the last custom path lives, so adding several entries from one place is quick.
+        /// </summary>
+        private string? LastCustomDirectory()
+        {
+            var last = EditCustomPaths.LastOrDefault()?.Path;
+
+            if (string.IsNullOrWhiteSpace(last))
+                return null;
+
+            return File.Exists(last) ? Path.GetDirectoryName(last) : last;
         }
 
         [RelayCommand]
@@ -426,7 +473,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                 string.IsNullOrWhiteSpace(EditGameRootPath) &&
                 customFolders.Count == 0)
             {
-                return "Specify at least one source: Vortex staging folder, game root or a custom folder.";
+                return "Specify at least one source: Vortex staging folder, game folder or a custom path.";
             }
 
             return null;
@@ -437,14 +484,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             var trimmed = value.Trim();
 
             return trimmed.Length == 0 ? null : trimmed;
-        }
-
-        private static List<string> ParseLines(string text)
-        {
-            return text
-                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
         }
     }
 }

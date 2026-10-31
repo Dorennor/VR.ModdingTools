@@ -16,6 +16,12 @@ namespace UniversalBackupTool.Model.Models.Backups
     {
         public string Fingerprint { get; init; } = string.Empty;
 
+        /// <summary>
+        /// Custom path entry exactly as configured in the profile: a folder, or a single file (then OriginalRootPath is
+        /// its parent folder and the unit holds just that file). Empty for other components and for older backups.
+        /// </summary>
+        public string CustomPath { get; init; } = string.Empty;
+
         public string ArchiveRootRelativePath { get; init; } = ".";
 
         public List<FileFingerprint> FileFingerprints { get; init; } = [];

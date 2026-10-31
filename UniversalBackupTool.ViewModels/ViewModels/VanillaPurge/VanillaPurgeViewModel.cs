@@ -146,6 +146,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 }
 
                 ReportSuccess($"{profile.GameName}: baseline snapshot saved, {snapshot.Files.Count:N0} files.");
+
+                var links = snapshot.Files.Values.Count(file => file.IsLink);
+
+                if (links > 0)
+                    ReportWarning($"{profile.GameName}: the snapshot contains {links:N0} linked file(s) (hardlinks/symlinks, usually Vortex deployments). A vanilla snapshot should be taken with mods undeployed (Purge in Vortex first); otherwise Purge treats these links as vanilla files and keeps them.");
             });
         }
 
@@ -161,7 +166,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             {
                 var unregistered = await FindUnregisteredFilesAsync(target, scope);
                 ShowPreviewIfStillSelected(target, unregistered);
-                ReportInfo($"{target.Profile.GameName}: {unregistered.Count:N0} unregistered file(s) would be deleted from {target.RootPath}.");
+                ReportInfo($"{target.Profile.GameName}: {DescribeUnregistered(unregistered)} would be deleted from {target.RootPath}.");
             });
         }
 
@@ -186,7 +191,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
                 var confirmed = _confirmationService.Confirm(
                     "Execute Safe Purge",
-                    $"{unregistered.Count:N0} file(s) not present in the baseline snapshot will be deleted from:\n{target.RootPath}\n\nA Safety Backup is created first. Continue?");
+                    $"{DescribeUnregistered(unregistered)} not present in the baseline snapshot will be deleted from:\n{target.RootPath}\n\n"
+                    + "For links (Vortex hardlinks/symlinks, junctions) only the link is removed; the files they point to are not touched.\n"
+                    + "A Safety Backup of the other files is created first. Continue?");
 
                 if (!confirmed)
                 {
@@ -204,7 +211,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 if (result.SafetyBackupPath is not null)
                     ReportInfo($"Deleted files were saved to {result.SafetyBackupPath}");
 
-                ReportSuccess($"Purge completed for {target.Profile.GameName}: {result.FilesDeleted:N0} file(s) deleted.");
+                ReportSuccess(result.LinksRemoved > 0
+                    ? $"Purge completed for {target.Profile.GameName}: {result.FilesDeleted:N0} entries deleted, {result.LinksRemoved:N0} of them links (only the links were removed, their targets are untouched)."
+                    : $"Purge completed for {target.Profile.GameName}: {result.FilesDeleted:N0} file(s) deleted.");
             });
         }
 
@@ -224,20 +233,30 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             return new PurgeTarget(SelectedProfile!.Profile, rootPath, _currentSnapshot.Data);
         }
 
-        private async Task<List<string>> FindUnregisteredFilesAsync(PurgeTarget target, IOperationScope scope)
+        private async Task<List<FileMetadata>> FindUnregisteredFilesAsync(PurgeTarget target, IOperationScope scope)
         {
             scope.Report(new($"comparing {target.RootPath} with the baseline snapshot", null, 0, 0, 0, 0));
 
             var changes = await Task.Run(() => _snapshotService.GetChangesAsync(target.RootPath, target.Snapshot, scope.CancellationToken), scope.CancellationToken);
 
             // Changes also contain modified and deleted files, which a purge never touches.
-            return changes.Keys
-                .Where(path => !target.Snapshot.Files.ContainsKey(path))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            return changes
+                .Where(change => !target.Snapshot.Files.ContainsKey(change.Key))
+                .Select(change => change.Value)
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
-        private void ShowPreviewIfStillSelected(PurgeTarget target, List<string> unregistered)
+        private static string DescribeUnregistered(IReadOnlyCollection<FileMetadata> unregistered)
+        {
+            var links = unregistered.Count(file => file.IsLink);
+
+            return links == 0
+                ? $"{unregistered.Count:N0} unregistered file(s)"
+                : $"{unregistered.Count:N0} unregistered entries ({links:N0} of them links)";
+        }
+
+        private void ShowPreviewIfStillSelected(PurgeTarget target, List<FileMetadata> unregistered)
         {
             if (SelectedProfile?.Profile.Id == target.Profile.Id)
                 ShowPreview(unregistered);
@@ -270,13 +289,15 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             return rootPath;
         }
 
-        private void ShowPreview(List<string> unregistered)
+        private void ShowPreview(List<FileMetadata> unregistered)
         {
-            PreviewFiles = unregistered;
+            PreviewFiles = unregistered
+                .Select(file => file.IsLink ? $"{file.RelativePath}    (link: only the link is removed)" : file.RelativePath)
+                .ToList();
 
             PreviewSummary = unregistered.Count == 0
                 ? "No unregistered files found."
-                : $"{unregistered.Count:N0} unregistered files would be deleted.";
+                : $"{DescribeUnregistered(unregistered)} would be deleted.";
         }
 
         private void ClearPreview()

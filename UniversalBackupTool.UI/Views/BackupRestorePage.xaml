@@ -187,8 +187,8 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Extra folders listed in each profile."
-                    Header="Custom folders"
+                    Description="Extra folders and files listed in each profile."
+                    Header="Custom paths"
                     Icon="{ui:SymbolIcon FolderAdd24}">
                     <ui:ToggleSwitch
                         IsChecked="{Binding IncludeCustomFolders, Mode=TwoWay}"
@@ -272,8 +272,8 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Extra folders from the profile."
-                        Header="Custom folders"
+                        Description="Extra folders and files from the profile."
+                        Header="Custom paths"
                         Icon="{ui:SymbolIcon FolderAdd24}"
                         Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel Orientation="Horizontal">

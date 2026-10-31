@@ -144,10 +144,55 @@ namespace UniversalBackupTool.Service.Services.Backups
                 BackupComponent.StagingFolders => profile.VortexStagingPath,
                 BackupComponent.GameConfigs => profile.GameRootPath,
                 BackupComponent.VortexAppData => profile.VortexAppDataPath,
-                BackupComponent.CustomFolders => profile.CustomFolders.FirstOrDefault(folder =>
-                    string.Equals(GetLeafName(folder), GetLeafName(unit.OriginalRootPath), StringComparison.OrdinalIgnoreCase)),
+                BackupComponent.CustomFolders => ResolveCustomRoot(profile, unit),
                 _ => null
             };
+        }
+
+        /// <summary>
+        /// Finds the profile's custom path for a unit: same full path, then the same path on another drive (restore
+        /// drive swap), then the same name when exactly one entry has it. Returns the folder to extract into
+        /// (the parent folder for a single-file entry), or null to fall back to the path stored in the backup.
+        /// </summary>
+        private static string? ResolveCustomRoot(BackupProfile profile, BackupManifestUnit unit)
+        {
+            var original = string.IsNullOrEmpty(unit.CustomPath) ? unit.OriginalRootPath : unit.CustomPath;
+            var entries = profile.CustomFolders.Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path.Trim()).ToList();
+
+            var match = entries.FirstOrDefault(path => PathsEqual(path, original))
+                ?? entries.FirstOrDefault(path => PathsEqual(WithoutDrive(path), WithoutDrive(original)));
+
+            if (match is null)
+            {
+                var sameName = entries
+                    .Where(path => string.Equals(GetLeafName(path), GetLeafName(original), StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (sameName.Count == 1)
+                    match = sameName[0];
+            }
+
+            if (match is null)
+                return null;
+
+            return IsSingleFileUnit(unit) ? Path.GetDirectoryName(Path.GetFullPath(match)) : match;
+        }
+
+        private static bool IsSingleFileUnit(BackupManifestUnit unit)
+        {
+            return !string.IsNullOrEmpty(unit.CustomPath) && !PathsEqual(unit.CustomPath, unit.OriginalRootPath);
+        }
+
+        private static string WithoutDrive(string path)
+        {
+            return path.Length >= 2 && path[1] == ':' ? path[2..] : path;
+        }
+
+        private static bool PathsEqual(string left, string right)
+        {
+            static string Normalize(string path) => path.Replace('/', '\\').TrimEnd('\\');
+
+            return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
         }
 
         private static string GetLeafName(string path) => Path.GetFileName(path.TrimEnd('\\', '/'));

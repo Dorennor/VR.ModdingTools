@@ -7,7 +7,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             ProfilePathKind.VortexStaging => "Vortex staging",
             ProfilePathKind.GameRoot => "Game root",
             ProfilePathKind.VortexAppData => "Vortex AppData",
-            _ => "Custom folder"
+            _ => "Custom path"
         };
 
         public string Display => $"{GameName} - {KindLabel}: {Path}";

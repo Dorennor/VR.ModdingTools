@@ -103,6 +103,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
 
         public ReadOnlyObservableCollection<OutputEntry> OutputEntries { get; }
 
+        public string LogsDirectory => _storagePathsProvider.GetPaths().LogsDirectory;
+
         [RelayCommand]
         private Task InitializeAsync() => RunBusyAsync(async () =>
                                 {
@@ -118,7 +120,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
 
                                     PausedJob = job is { IsCompleted: false } ? job : null;
 
-                                    ReportInfo($"Ready. Application data: {paths.BaseDirectory}");
+                                    var version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
+                                    ReportInfo($"Vortex Backup Tool {version?.ToString(3)} started. Application data: {paths.BaseDirectory}");
 
                                     if (PausedJob is not null)
                                         ReportWarning($"A previous backup is incomplete ({PausedJob.FailedFiles.Count:N0} file(s) were in use). Open Backup & Restore and select Continue Backup.");

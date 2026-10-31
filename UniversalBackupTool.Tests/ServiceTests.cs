@@ -767,6 +767,17 @@ namespace UniversalBackupTool.Tests
 
             return Task.CompletedTask;
         }
+
+        // Link handling is exercised against the real implementation.
+        private static readonly UniversalBackupTool.Services.FileSystemProvider Real = new();
+
+        public IReadOnlyList<UniversalBackupTool.Model.Models.FileSystem.ScannedEntry> ScanWithoutFollowingLinks(string rootPath, CancellationToken cancellationToken = default)
+            => Real.ScanWithoutFollowingLinks(rootPath, cancellationToken);
+
+        public UniversalBackupTool.Model.Models.FileSystem.FollowedScan ScanFollowingLinks(string rootPath, CancellationToken cancellationToken = default)
+            => Real.ScanFollowingLinks(rootPath, cancellationToken);
+
+        public void DeleteEntry(UniversalBackupTool.Model.Models.FileSystem.ScannedEntry entry) => Real.DeleteEntry(entry);
     }
 
     internal sealed class FakeSafetyBackupService : ISafetyBackupService

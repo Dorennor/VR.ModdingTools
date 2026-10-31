@@ -144,7 +144,15 @@
                                             Appearance="Transparent"
                                             Command="{Binding ClearOutputCommand}"
                                             Icon="{ui:SymbolIcon Delete20}"
-                                            ToolTip="Clear all" />
+                                            ToolTip="Clear the panel (the log file in Logs keeps everything)" />
+                                        <ui:Button
+                                            Width="28"
+                                            Height="26"
+                                            Padding="0"
+                                            Appearance="Transparent"
+                                            Click="OnOpenLogsFolderClick"
+                                            Icon="{ui:SymbolIcon FolderOpen24}"
+                                            ToolTip="Open the Logs folder (one log file per day, kept 30 days)" />
                                         <ui:Button
                                             Width="28"
                                             Height="26"

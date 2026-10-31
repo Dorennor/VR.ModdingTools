@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using UniversalBackupTool.Interface.Interfaces.Jobs;
+using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Jobs;
 
 namespace UniversalBackupTool.Service.Services.Jobs
@@ -9,19 +10,41 @@ namespace UniversalBackupTool.Service.Services.Jobs
     {
         private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 
+        private readonly string _jobFilePath;
+
+        /// <summary>
+        /// Uses the default application folder (AppContext.BaseDirectory\Temp).
+        /// </summary>
+        public BackupJobStateService()
+        {
+            _jobFilePath = Path.Combine(AppContext.BaseDirectory, "Temp", "active_backup_job.json");
+        }
+
+        /// <summary>
+        /// Saves to the same file the application loads from (<c>AppStoragePaths.ActiveBackupJobFilePath</c>).
+        /// </summary>
+        public BackupJobStateService(IAppStoragePathsProvider storagePathsProvider)
+        {
+            ArgumentNullException.ThrowIfNull(storagePathsProvider);
+            _jobFilePath = storagePathsProvider.GetPaths().ActiveBackupJobFilePath;
+        }
+
         public async Task SaveAsync(ActiveBackupJob activeBackupJob, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(activeBackupJob);
 
-            var filePath = Path.Combine(AppContext.BaseDirectory, "Temp", "active_backup_job.json");
-            var directory = Path.GetDirectoryName(filePath);
+            var directory = Path.GetDirectoryName(_jobFilePath);
 
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
-            await using var stream = File.Create(filePath);
+            // Write then replace, so a crash during the write never leaves a half-written job that Continue Backup needs.
+            var temporaryPath = _jobFilePath + ".tmp";
 
-            await JsonSerializer.SerializeAsync(stream, activeBackupJob, JsonOptions, cancellationToken);
+            await using (var stream = File.Create(temporaryPath))
+                await JsonSerializer.SerializeAsync(stream, activeBackupJob, JsonOptions, cancellationToken);
+
+            File.Move(temporaryPath, _jobFilePath, overwrite: true);
         }
 
         public async Task<ActiveBackupJob?> LoadAsync(string filePath, CancellationToken cancellationToken = default)
@@ -29,9 +52,17 @@ namespace UniversalBackupTool.Service.Services.Jobs
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
                 return null;
 
-            await using var stream = File.OpenRead(filePath);
+            try
+            {
+                await using var stream = File.OpenRead(filePath);
 
-            return await JsonSerializer.DeserializeAsync<ActiveBackupJob>(stream, JsonOptions, cancellationToken);
+                return await JsonSerializer.DeserializeAsync<ActiveBackupJob>(stream, JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                // An unreadable job file is treated as "no paused job" instead of breaking the Backup page.
+                return null;
+            }
         }
 
         public Task DeleteAsync(string filePath, CancellationToken cancellationToken = default)

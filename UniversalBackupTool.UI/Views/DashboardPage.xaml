@@ -202,31 +202,94 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Extra folders to back up, one per line. For example add-on folders of games not managed by Vortex."
-                        Header="Custom folders"
+                        Description="Extra folders or single files to back up, for example add-on folders or a settings file of a game not managed by Vortex. Each entry is archived separately; links inside folders are followed and their real files are stored."
+                        Header="Custom paths"
                         Icon="{ui:SymbolIcon FolderAdd24}"
                         IsStacked="True">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ui:TextBox
-                                Height="96"
-                                AcceptsReturn="True"
-                                FontFamily="{StaticResource MonospaceFontFamily}"
-                                FontSize="13"
-                                Text="{Binding EditCustomFoldersText, UpdateSourceTrigger=PropertyChanged}"
-                                TextWrapping="NoWrap"
-                                VerticalScrollBarVisibility="Auto" />
-                            <ui:Button
-                                Grid.Column="1"
-                                Margin="8,0,0,0"
-                                VerticalAlignment="Top"
-                                Command="{Binding AddCustomFolderCommand}"
-                                Content="Add folder"
-                                Icon="{ui:SymbolIcon Add24}" />
-                        </Grid>
+                        <StackPanel>
+                            <TextBlock
+                                Margin="0,0,0,8"
+                                Style="{StaticResource CaptionTextStyle}"
+                                Text="No custom paths."
+                                Visibility="{Binding HasNoEditCustomPaths, Converter={StaticResource BoolToVisibility}}" />
+
+                            <ItemsControl ItemsSource="{Binding EditCustomPaths}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <ui:SymbolIcon
+                                                Width="20"
+                                                Margin="0,0,10,0"
+                                                VerticalAlignment="Center"
+                                                FontSize="18"
+                                                ToolTip="{Binding KindLabel}">
+                                                <ui:SymbolIcon.Style>
+                                                    <Style TargetType="ui:SymbolIcon">
+                                                        <Setter Property="Symbol" Value="Folder24" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                                <Setter Property="Symbol" Value="Document24" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                                                                <Setter Property="Symbol" Value="DocumentQuestionMark24" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:SymbolIcon.Style>
+                                            </ui:SymbolIcon>
+
+                                            <TextBox
+                                                Grid.Column="1"
+                                                VerticalContentAlignment="Center"
+                                                FontFamily="{StaticResource MonospaceFontFamily}"
+                                                FontSize="13"
+                                                Text="{Binding Path, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <ComboBox
+                                                Grid.Column="2"
+                                                Width="76"
+                                                Margin="8,0,0,0"
+                                                ItemsSource="{Binding DataContext.AvailableDrives, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                SelectedItem="{Binding Drive, Mode=TwoWay}"
+                                                ToolTip="Change only the drive letter" />
+
+                                            <Button
+                                                Grid.Column="3"
+                                                Width="36"
+                                                Height="32"
+                                                Margin="8,0,0,0"
+                                                Padding="0"
+                                                Command="{Binding DataContext.RemoveCustomPathCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="Remove this path">
+                                                <ui:SymbolIcon FontSize="16" Symbol="Delete24" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                <ui:Button
+                                    Command="{Binding AddCustomFolderCommand}"
+                                    Content="Add folder"
+                                    Icon="{ui:SymbolIcon FolderAdd24}" />
+                                <ui:Button
+                                    Margin="8,0,0,0"
+                                    Command="{Binding AddCustomFilesCommand}"
+                                    Content="Add files"
+                                    Icon="{ui:SymbolIcon DocumentAdd24}" />
+                            </StackPanel>
+                        </StackPanel>
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
@@ -341,7 +404,7 @@
                                                     <ColumnDefinition Width="150" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Custom folders" />
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Custom paths" />
                                                 <TextBlock
                                                     Grid.Column="1"
                                                     Style="{StaticResource PathTextStyle}"

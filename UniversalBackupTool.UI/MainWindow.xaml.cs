@@ -116,5 +116,12 @@ namespace UniversalBackupTool.UI
         {
             OutputListBehavior.CopyToClipboard(_viewModel.OutputEntries);
         }
+
+        private void OnOpenLogsFolderClick(object sender, RoutedEventArgs e)
+        {
+            var folder = _viewModel.LogsDirectory;
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+        }
     }
 }

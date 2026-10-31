@@ -2,6 +2,7 @@ using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.FileSystem;
 using UniversalBackupTool.Interfaces.Snapshots;
 using UniversalBackupTool.Model.Models.Backups;
+using UniversalBackupTool.Model.Models.FileSystem;
 using UniversalBackupTool.Model.Models.Snapshots;
 
 namespace UniversalBackupTool.Service.Services.Snapshots
@@ -25,21 +26,22 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             if (!Directory.Exists(rootPath))
                 return new SnapshotData(profileId, new Dictionary<string, FileMetadata>(StringComparer.OrdinalIgnoreCase));
 
-            var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
+            // Game folders are never scanned through links: links (Vortex deployments) are recorded as entries.
+            var entries = await Task.Run(() => _fileSystemProvider.ScanWithoutFollowingLinks(rootPath, cancellationToken), cancellationToken);
             var dictionary = new Dictionary<string, FileMetadata>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var filePath in files)
+            foreach (var entry in entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var relativePath = _fileSystemProvider.GetRelativePath(rootPath, filePath);
-                var info = new FileInfo(filePath);
-
-                dictionary[relativePath] = new FileMetadata(
-                    RelativePath: relativePath,
-                    SizeBytes: info.Length,
-                    LastWriteTimeUtc: info.LastWriteTimeUtc,
-                    IsSymlink: _fileSystemProvider.IsSymlink(filePath));
+                dictionary[entry.RelativePath] = new FileMetadata(
+                    RelativePath: entry.RelativePath,
+                    SizeBytes: entry.Length,
+                    LastWriteTimeUtc: entry.LastWriteTimeUtc,
+                    IsSymlink: entry.Kind is FileEntryKind.FileSymlink or FileEntryKind.DirectoryLink)
+                {
+                    Kind = entry.Kind
+                };
             }
 
             return new SnapshotData(profileId, dictionary);
@@ -62,7 +64,9 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                     continue;
                 }
 
-                if (baselineFile.SizeBytes != current.Value.SizeBytes || baselineFile.LastWriteTimeUtc != current.Value.LastWriteTimeUtc)
+                if (baselineFile.SizeBytes != current.Value.SizeBytes
+                    || baselineFile.LastWriteTimeUtc != current.Value.LastWriteTimeUtc
+                    || baselineFile.Kind != current.Value.Kind)
                     changes[current.Key] = current.Value;
             }
 
@@ -85,26 +89,52 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             if (!Directory.Exists(rootPath))
                 return new PurgeResult(0, null);
 
-            var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
-            var filesToDelete = files
-                .Where(filePath => !baselineSnapshot.Files.ContainsKey(_fileSystemProvider.GetRelativePath(rootPath, filePath)))
+            ArgumentNullException.ThrowIfNull(baselineSnapshot);
+
+            // Not following links: entries below directory links are never visited, so link targets are never touched.
+            var entries = await Task.Run(() => _fileSystemProvider.ScanWithoutFollowingLinks(rootPath, cancellationToken), cancellationToken);
+            var toDelete = entries
+                .Where(entry => !baselineSnapshot.Files.ContainsKey(entry.RelativePath))
                 .ToList();
 
-            var safetyBackupFiles = filesToDelete
-                .Select(filePath => new ArchiveFileItem(filePath, _fileSystemProvider.GetRelativePath(rootPath, filePath)))
+            var safetyBackupFiles = SelectEntriesNeedingSafetyCopy(toDelete)
+                .Select(entry => new ArchiveFileItem(entry.FullPath, entry.RelativePath))
                 .ToList();
 
             var safetyBackupPath = await _safetyBackupService.CreateSafetyBackupAsync(safetyBackupFiles, "pre-purge", "Purge", cancellationToken);
             var deleted = 0;
+            var linksRemoved = 0;
 
-            foreach (var filePath in filesToDelete)
+            foreach (var entry in toDelete)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await _fileSystemProvider.DeleteFileAsync(filePath, cancellationToken);
+                _fileSystemProvider.DeleteEntry(entry);
                 deleted++;
+
+                if (entry.Kind != FileEntryKind.File)
+                    linksRemoved++;
             }
 
-            return new PurgeResult(deleted, safetyBackupPath);
+            return new PurgeResult(deleted, safetyBackupPath) { LinksRemoved = linksRemoved };
+        }
+
+        /// <summary>
+        /// Deleting a link loses no data, so links get no safety copy: symlinks and junctions only point elsewhere, and a
+        /// hardlink's data stays reachable through its other names (usually the Vortex staging file). The exception is a
+        /// file whose every hardlink name is being deleted here; one of its names is copied.
+        /// </summary>
+        private static IEnumerable<ScannedEntry> SelectEntriesNeedingSafetyCopy(IReadOnlyList<ScannedEntry> toDelete)
+        {
+            foreach (var entry in toDelete.Where(entry => entry.Kind == FileEntryKind.File))
+                yield return entry;
+
+            foreach (var group in toDelete.Where(entry => entry.Kind == FileEntryKind.HardLink).GroupBy(entry => entry.FileId ?? entry.FullPath, StringComparer.OrdinalIgnoreCase))
+            {
+                var first = group.First();
+
+                if (first.FileId is null || group.Count() >= first.LinkCount)
+                    yield return first;
+            }
         }
     }
 }

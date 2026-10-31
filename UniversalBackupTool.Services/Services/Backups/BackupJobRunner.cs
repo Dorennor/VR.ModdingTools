@@ -169,7 +169,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 return "Vortex AppData";
 
             if (options.IncludeCustomFolders)
-                return "Custom Folders";
+                return "Custom paths";
 
             return "Unknown";
         }
@@ -602,18 +602,42 @@ namespace UniversalBackupTool.Service.Services.Backups
             {
                 var customIndex = 0;
 
-                foreach (var folder in profile.CustomFolders)
+                // Each custom path is a folder or a single file and becomes its own unit (own archive, reused when unchanged).
+                foreach (var customPath in profile.CustomFolders.Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path.Trim()))
                 {
-                    var files = await CollectFolderAsync(folder, "Custom folder", filter, warnings, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    string rootPath;
+                    List<SourceFile>? files;
+
+                    if (File.Exists(customPath))
+                    {
+                        var fullPath = Path.GetFullPath(customPath);
+                        var fileName = Path.GetFileName(fullPath);
+
+                        rootPath = Path.GetDirectoryName(fullPath)!;
+                        files = filter.IsIgnored(fileName) ? [] : [new SourceFile(fullPath, fileName)];
+                    }
+                    else if (Directory.Exists(customPath))
+                    {
+                        rootPath = customPath;
+                        files = await CollectFolderAsync(customPath, "Custom folder", filter, warnings, cancellationToken);
+                    }
+                    else
+                    {
+                        warnings.Add($"Custom path was not found and was skipped: {customPath}");
+                        continue;
+                    }
 
                     if (files is null || files.Count == 0)
                         continue;
 
                     customIndex++;
 
-                    var key = $"custom{customIndex}_{SanitizeFileName(GetLeafName(folder))}";
+                    var key = $"custom{customIndex}_{SanitizeFileName(GetLeafName(customPath))}";
+                    var unit = CreateSingleUnit(options, BackupComponent.CustomFolders, key, $"custom/{key}.zip", rootPath, files);
 
-                    units.Add(CreateSingleUnit(options, BackupComponent.CustomFolders, key, $"custom/{key}.zip", folder, files));
+                    units.Add(unit with { Manifest = unit.Manifest with { CustomPath = customPath } });
                 }
             }
 
@@ -636,10 +660,12 @@ namespace UniversalBackupTool.Service.Services.Backups
                 return null;
             }
 
-            var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
+            // Backups follow links so the real contents are archived (a restore on another PC gets real files).
+            var scan = await Task.Run(() => _fileSystemProvider.ScanFollowingLinks(rootPath, cancellationToken), cancellationToken);
+            warnings.AddRange(scan.Warnings);
 
-            return files
-                .Select(file => new SourceFile(file, _fileSystemProvider.GetRelativePath(rootPath, file)))
+            return scan.Files
+                .Select(file => new SourceFile(file.FullPath, file.RelativePath))
                 .Where(file => !filter.IsIgnored(file.RelativePath))
                 .ToList();
         }
@@ -671,8 +697,17 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var changes = await Task.Run(() => _snapshotService.GetChangesAsync(rootPath, baseline.Data, cancellationToken), cancellationToken);
 
+            // Links in the game folder are Vortex deployments (hardlinks/symlinks to staging); their data is already in
+            // the staging backup, so only real files are config candidates.
+            var linkedChanges = changes.Values.Count(change => change.IsLink);
+
+            if (linkedChanges > 0)
+                warnings.Add($"Game configs: {linkedChanges:N0} linked file(s) in the game folder (Vortex deployments) were skipped; their data is part of the staging backup.");
+
             // Changes also contain files deleted since the snapshot, which there is nothing to archive for.
-            return changes.Keys
+            return changes.Values
+                .Where(change => !change.IsLink)
+                .Select(change => change.RelativePath)
                 .Select(relative => new SourceFile(Path.Combine(rootPath, relative.Replace('/', Path.DirectorySeparatorChar)), relative.Replace('\\', '/')))
                 .Where(file => File.Exists(file.FullPath) && !filter.IsIgnored(file.RelativePath))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
@@ -967,8 +1002,11 @@ namespace UniversalBackupTool.Service.Services.Backups
 
         private static string GetUnitKey(BackupManifestUnit unit)
         {
+            // The custom path itself (folder or file) identifies the unit; older manifests only have the folder root,
+            // which equals the custom path for folders, so their archives keep being reused.
             var customRoot = unit.Component == BackupComponent.CustomFolders
-                ? Path.GetFullPath(unit.OriginalRootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                ? Path.GetFullPath(string.IsNullOrEmpty(unit.CustomPath) ? unit.OriginalRootPath : unit.CustomPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                 : string.Empty;
 
             return $"{unit.Component}|{unit.RelativeDestination}|{customRoot}";
@@ -978,8 +1016,7 @@ namespace UniversalBackupTool.Service.Services.Backups
         {
             return files.Select(file =>
             {
-                var info = new FileInfo(file.SourcePath);
-                info.Refresh();
+                var info = ResolveFileForMetadata(file.SourcePath);
 
                 return new FileFingerprint(
                     file.EntryName.Replace('\\', '/'),
@@ -991,8 +1028,44 @@ namespace UniversalBackupTool.Service.Services.Backups
             }).OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
+        /// <summary>
+        /// For a symbolic link the target's size and times are what change when the content changes; the link's own
+        /// metadata stays the same, which would make an edited target look unchanged.
+        /// </summary>
+        private static FileInfo ResolveFileForMetadata(string path)
+        {
+            var info = new FileInfo(path);
+            info.Refresh();
+
+            try
+            {
+                if (info.Exists && info.LinkTarget is not null && info.ResolveLinkTarget(returnFinalTarget: true) is FileInfo { Exists: true } target)
+                    return target;
+            }
+            catch (IOException)
+            {
+            }
+
+            return info;
+        }
+
+        private static bool IsSingleFileUnit(BackupManifestUnit unit)
+        {
+            if (unit.Component != BackupComponent.CustomFolders || string.IsNullOrEmpty(unit.CustomPath))
+                return false;
+
+            var customPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(unit.CustomPath));
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(unit.OriginalRootPath));
+
+            return !string.Equals(customPath, root, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static List<DirectoryFingerprint> CollectDirectoryMetadata(BackupManifestUnit unit)
         {
+            // A single custom file has no folder structure of its own; its parent folder is not part of the backup.
+            if (IsSingleFileUnit(unit))
+                return [];
+
             var root = unit.Component == BackupComponent.StagingFolders && unit.RelativeDestination.Length > 0
                 ? Path.Combine(unit.OriginalRootPath, unit.RelativeDestination)
                 : unit.OriginalRootPath;

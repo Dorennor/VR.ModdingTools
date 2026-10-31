@@ -510,7 +510,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 names.Add("Vortex AppData");
 
             if (options.IncludeCustomFolders)
-                names.Add("custom folders");
+                names.Add("custom paths");
 
             return string.Join(", ", names);
         }
@@ -612,7 +612,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     BackupComponent.StagingFolders => "Staging folders",
                     BackupComponent.GameConfigs => "Game configs",
                     BackupComponent.VortexAppData => "Vortex AppData",
-                    _ => "Custom folder"
+                    _ => "Custom path"
                 };
 
                 var note = group.Key.UsesOriginalPath ? " (path from the backup, no matching profile path)" : string.Empty;
