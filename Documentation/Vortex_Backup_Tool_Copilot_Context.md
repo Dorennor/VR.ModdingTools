@@ -11,16 +11,35 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
 ## Implemented
 
 - .NET 10 WPF, WPF-UI 4.3.0 (NuGet `WPF-UI`), CommunityToolkit.Mvvm, DI and layered Models/Interfaces/Services/ViewModels/UI.
-- Settings page: backup destination, compression rules, safety-backup retention and global ignore patterns.
+- UI look (reworked 2026-10-31): Windows 11 Settings style pages plus Visual Studio 2026 style Output/status bar.
+  - Pages are built from `controls:SettingsCard` rows (`UI/Controls/SettingsCard.cs`): icon, header, description, control on the right. `IsStacked="True"` puts the control below the text for wide inputs such as paths. Rows are grouped under `SectionHeaderTextStyle` headers.
+  - All shared styles are in `UI/Styles/AppStyles.xaml`, merged in `App.xaml`: type ramp, page/header/card styles, `BoolToVisibility`, `MonospaceFontFamily`, Output list and status bar styles.
+  - Theme: `AppSettings.Theme` (`AppTheme` System/Light/Dark, default System) is applied at startup via `IThemeService` (`UI/Services/ThemeService.cs`, WPF-UI `ApplicationThemeManager`/`SystemThemeWatcher`). The Settings "App theme" row applies and saves it immediately; it is not part of the Save button.
+- Settings page: app theme, backup destination, safety backups, compression rules, retention and global ignore patterns.
 - Dashboard: JSON profiles, editable paths/custom folders, new-profile default `%APPDATA%\Vortex`, per-path drive swap and Find on other disk. No global drive-letter rewrite.
 - Vanilla & Purge: per-profile persisted baseline snapshots, preview, confirmed purge and safety backup before deletion.
+- Backup & Restore profile picker is built for many games:
+  - search box (`TargetFilter` → `VisibleTargets`);
+  - a "Select all" button that becomes "Deselect all" once every listed game is selected (acts on the listed/filtered games only), plus Clear (all games);
+  - after a backup runs to the end (also with locked files), no games are selected and components reset to the defaults (staging + Vortex AppData). A cancelled or failed backup keeps the selection so it can be retried;
+  - live "N of M selected" summary;
+  - a bounded, scrollable three-column checkbox grid, with games sorted by name.
 - Backup & Restore: Continue Backup for locked files, overwrite confirmation, pre-restore safety backup, component selection and legacy version-1/monolithic restore. Progress and cancel live in the global Output panel (below).
 - Application-wide operations and Output panel (added 2026-10-31):
   - Long operations (Backup, Continue Backup, Restore, Create Snapshot, Purge Preview, Purge) run through the singleton `IOperationCoordinator`. Only one runs at a time, and it keeps running when the user switches pages. While one runs, operation buttons on every page are disabled through `BasicViewModel.CanStartOperation`. Short page actions (load, save profile/settings, browse) are not coordinated.
   - `TryBegin(name)` returns an `IOperationScope` (null if busy). The scope provides the `CancellationToken` and is an `IProgress<BackupProgress>` passed straight to services. It can be reported from any thread: the coordinator marshals to the UI `SynchronizationContext` captured at `TryBegin` and merges bursts of reports into one UI update. Each new `Phase` string is written once to Output (`"<Operation>: <phase>"`). Disposing the scope ends the operation.
   - `IOperationOutputService` holds the Output entries (`OutputEntry`: timestamp, `OutputSeverity` Info/Success/Warning/Error, message), capped at 5000 lines. It is thread-safe through the `SynchronizationContext` captured when DI creates it on the UI thread.
   - All user-facing messages go to Output. Pages no longer have Error/Warning/Done InfoBars or their own progress card. Page-specific content stays on the page: the paused-job card with Continue/Discard, purge preview list, snapshot status, restore plan and Find-on-other-disk results.
-  - Output panel (bottom of `MainWindow`, resizable with a GridSplitter): severity colours (`SystemFillColorSuccess/Caution/CriticalBrush`). While an operation runs it shows the operation name, progress bar (indeterminate when totals are 0), current item and Cancel/Cancelling... button. It auto-scrolls only while already at the bottom. Ctrl+C copies selected lines; Copy all and Clear buttons are in the header.
+  - Layout: the navigation pane runs the full window height, with Settings at the bottom. Output and the status bar are docked at the bottom of the **page area only**:
+    - they live in `NavigationView.ContentOverlay` (`BottomDock`);
+    - `MainWindow.xaml.cs` sets the bottom `Margin` of the `NavigationViewContentPresenter` to the dock height, so pages end above it;
+    - do not use `NavigationView.FrameMargin` for this: WPF-UI applies it to the container that also holds the overlay, which pushes the dock up;
+    - a `Thumb` grip above the panel resizes it (minimum 90 px, and at least 220 px is kept for the page).
+  - Output is a Visual Studio style tool window:
+    - slim title strip with icon commands (Copy all, Clear, Hide);
+    - flat monospace log using `FlatListBoxStyle`, with severity colours (`SystemFillColorSuccess/Caution/CriticalBrush`);
+    - auto-scrolls only while already at the bottom; Ctrl+C copies the selected lines.
+  - A VS-style status bar below it shows "Ready" or the operation and phase, a compact progress bar (indeterminate when totals are 0), the percentage, Cancel/Cancelling..., and an Output toggle. `MainViewModel.IsOutputVisible` hides the tool window and remembers its height; it reopens automatically when an operation starts.
   - Closing the window during an operation asks for confirmation, cancels the operation and closes once it has stopped (`MainViewModel.TryPrepareClose` / `CloseRequested`). This lets cancellation clean up temporary archives.
   - `ISnapshotService.PurgeUnregisteredFilesAsync` returns `PurgeResult(FilesDeleted, SafetyBackupPath)` so the actual deleted count and safety archive are reported.
 - Incremental snapshots: each run creates a dated manifest per component under `<backup-root>\<game>\<component>\<timestamp>`, where component is `staging`, `configs`, `appdata` or `custom`. Shared immutable archives live in the sibling `<backup-root>\<game>\<component>\_archives`. A restore selects one component's dated folder. Keep `_archives` with all dated snapshot folders when moving/copying. One archive unit per top-level staging mod; loose root files are separate. New/changed units receive new archives; unchanged archives are reused; removed mods are omitted only from new snapshots. The same unit layout applies to configs, Vortex AppData and custom folders.
@@ -106,7 +125,12 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
 - App data is rooted beside the executable via `AppStoragePaths`: settings.json, profiles.json, Logs, Temp/active_backup_job.json, SafetyBackups and Snapshots. Single-file publishing is not yet verified. `%APPDATA%\Vortex` is external Vortex source data, not app storage.
 - Use local time (`DateTime.Now`) for user-facing timestamps.
 - Do not change namespaces, project files or folder structure unless asked. Preserve unrelated work and existing line endings.
-- Every WPF page needs `ScrollViewer.CanContentScroll="False"` and its own `<ScrollViewer VerticalScrollBarVisibility="Auto">` for page-wide wheel scrolling.
+- Every page uses `Style="{StaticResource AppPageStyle}"`, which sets the theme foreground and `ScrollViewer.CanContentScroll="False"`. Pages follow this layout:
+  - their own `<ScrollViewer VerticalScrollBarVisibility="Auto">`;
+  - inside it, a `Grid` with one `<ColumnDefinition Width="*" MaxWidth="1072" />` (left aligned, capped width);
+  - inside that, a `StackPanel Style="{StaticResource PageContentPanelStyle}"`.
+- Text must use the `AppStyles.xaml` text styles (`PageTitleTextStyle`, `SectionHeaderTextStyle`, `BodyTextStyle`, `CaptionTextStyle`, `PathTextStyle`, ...) or set `Foreground` from a theme brush. The inherited default foreground is black, which caused unreadable titles in dark mode.
+- Nested scrollable lists inside a page: give them a `MaxHeight`, enable virtualization (`CanContentScroll="True"` on the inner ScrollViewer) and set `helpers:NestedScrollBehavior.PassWheelAtEdges="True"`.
 - Avoid `ui:Button` in DataTemplates; a previous `PressedForeground` binding error was resolved with plain WPF `Button`. Use `helpers:StackPanelSpacing.Spacing`, not a nonexistent `ui:StackPanel`.
 - `BackupJobStateService.SaveAsync` uses `AppContext.BaseDirectory\Temp\active_backup_job.json`; test actual crash/restart resume.
 - Legacy `IBackupEngine`/`BackupEngine` remains beside newer `IBackupJobRunner`/`BackupJobRunner`; UI uses the latter. Check references before removing old code.

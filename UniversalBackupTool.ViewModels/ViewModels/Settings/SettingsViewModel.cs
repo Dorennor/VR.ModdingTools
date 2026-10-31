@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
+using UniversalBackupTool.Interface.Interfaces.Appearance;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Settings;
@@ -19,13 +20,16 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         private readonly ISettingsStore _settingsStore;
         private readonly IAppStoragePathsProvider _storagePathsProvider;
         private readonly IFolderPickerService _folderPickerService;
+        private readonly IThemeService _themeService;
 
         private AppSettings? _loadedSettings;
+        private bool _isApplyingSettings;
 
         public SettingsViewModel(
             ISettingsStore settingsStore,
             IAppStoragePathsProvider storagePathsProvider,
             IFolderPickerService folderPickerService,
+            IThemeService themeService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -33,6 +37,48 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
             _folderPickerService = folderPickerService ?? throw new ArgumentNullException(nameof(folderPickerService));
+            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+        }
+
+        public IReadOnlyList<ThemeOption> ThemeOptions { get; } =
+        [
+            new(AppTheme.System, "Use system setting"),
+            new(AppTheme.Light, "Light"),
+            new(AppTheme.Dark, "Dark")
+        ];
+
+        /// <summary>
+        /// Applied and saved immediately, like the Windows 11 theme setting; not part of the Save button.
+        /// </summary>
+        [ObservableProperty]
+        private AppTheme _selectedTheme = AppTheme.System;
+
+        partial void OnSelectedThemeChanged(AppTheme value)
+        {
+            if (_isApplyingSettings)
+                return;
+
+            _themeService.Apply(value);
+            _ = SaveThemeAsync(value);
+        }
+
+        private async Task SaveThemeAsync(AppTheme theme)
+        {
+            try
+            {
+                // Merge into the file on disk so unsaved edits on this page are neither saved nor lost.
+                var paths = _storagePathsProvider.GetPaths();
+                var stored = await _settingsStore.LoadAsync(paths.SettingsFilePath);
+
+                await _settingsStore.SaveAsync(paths.SettingsFilePath, stored with { Theme = theme });
+
+                if (_loadedSettings is not null)
+                    _loadedSettings = _loadedSettings with { Theme = theme };
+            }
+            catch (Exception exception)
+            {
+                ReportError($"The theme could not be saved: {exception.Message}");
+            }
         }
 
         [ObservableProperty]
@@ -76,6 +122,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
 
                                     var settings = baseSettings with
                                     {
+                                        Theme = SelectedTheme,
                                         GoogleDriveBackupPath = GoogleDriveBackupPath.Trim(),
                                         SafetyBackupPath = SafetyBackupPath.Trim(),
                                         SafetyBackupRetentionDays = (int)SafetyBackupRetentionDays,
@@ -142,6 +189,17 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         private void Apply(AppSettings settings)
         {
             _loadedSettings = settings;
+
+            _isApplyingSettings = true;
+
+            try
+            {
+                SelectedTheme = settings.Theme;
+            }
+            finally
+            {
+                _isApplyingSettings = false;
+            }
 
             GoogleDriveBackupPath = settings.GoogleDriveBackupPath;
             SafetyBackupPath = settings.SafetyBackupPath;

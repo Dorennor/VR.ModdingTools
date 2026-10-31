@@ -13,6 +13,8 @@ namespace UniversalBackupTool.Model.Models.Settings
 
         public List<string> GlobalIgnorePatterns { get; init; } = [];
 
+        public AppTheme Theme { get; init; } = AppTheme.System;
+
         public string SafetyBackupPath { get; init; } = string.IsNullOrWhiteSpace(SafetyBackupPath)
             ? Path.Combine(AppContext.BaseDirectory, "SafetyBackups")
             : SafetyBackupPath;

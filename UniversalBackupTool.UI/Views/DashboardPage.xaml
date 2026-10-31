@@ -2,324 +2,382 @@
     x:Class="UniversalBackupTool.UI.Views.DashboardPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:UniversalBackupTool.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="Dashboard"
+    Title="Profiles"
     d:DesignHeight="700"
     d:DesignWidth="900"
-    ScrollViewer.CanContentScroll="False"
+    Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
     <Page.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <!--  Read-only "label: path" line inside a profile card.  -->
+        <Style x:Key="ProfileFieldGridStyle" TargetType="Grid">
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
     </Page.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="40,20,40,40" helpers:StackPanelSpacing.Spacing="0">
-            <ui:TextBlock FontTypography="Title" Text="Game Profiles" />
-            <ui:TextBlock
-                Margin="0,4,0,24"
-                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                Text="Manage games, staging folders, and custom paths." />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="1072" />
+            </Grid.ColumnDefinitions>
 
-            <Grid Margin="0,0,0,20">
-                <ui:Button
-                    Command="{Binding ToggleFindCommand}"
-                    Content="Find on other disk"
-                    Icon="{ui:SymbolIcon Search24}" />
-                <ui:Button
-                    HorizontalAlignment="Right"
-                    Appearance="Primary"
-                    Command="{Binding AddProfileCommand}"
-                    Content="Add New Profile"
-                    Icon="{ui:SymbolIcon Add24}" />
-            </Grid>
-
-            <ui:Card
-                Margin="0,0,0,24"
-                Padding="20"
-                Visibility="{Binding IsFindVisible, Converter={StaticResource BoolToVisibility}}">
-                <StackPanel helpers:StackPanelSpacing.Spacing="12">
-                    <ui:TextBlock FontTypography="Subtitle" Text="Find on other disk" />
-                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Pick one of the profile paths. The same path will be searched on all other local disks." />
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ComboBox
-                            HorizontalAlignment="Stretch"
-                            DisplayMemberPath="Display"
-                            ItemsSource="{Binding FindablePaths}"
-                            SelectedItem="{Binding SelectedFindPath, Mode=TwoWay}" />
+            <StackPanel Style="{StaticResource PageContentPanelStyle}">
+                <Grid Style="{StaticResource PageHeaderGridStyle}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Game profiles" />
+                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Games, their Vortex staging, game and AppData folders, and extra folders to back up." />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
                         <ui:Button
-                            Grid.Column="1"
-                            Margin="12,0,0,0"
-                            Appearance="Primary"
-                            Command="{Binding FindOnOtherDisksCommand}"
-                            Content="Find"
+                            Command="{Binding ToggleFindCommand}"
+                            Content="Find on other disk"
                             Icon="{ui:SymbolIcon Search24}" />
-                    </Grid>
-
-                    <ui:TextBlock
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="{Binding FindMessage}"
-                        TextWrapping="Wrap"
-                        Visibility="{Binding HasFindMessage, Converter={StaticResource BoolToVisibility}}" />
-
-                    <Grid Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVisibility}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ComboBox
-                            HorizontalAlignment="Stretch"
-                            ItemsSource="{Binding FoundCandidates}"
-                            SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}" />
                         <ui:Button
-                            Grid.Column="1"
-                            Margin="12,0,0,0"
+                            Margin="8,0,0,0"
                             Appearance="Primary"
-                            Command="{Binding ApplyCandidateCommand}"
-                            Content="Use this path and save"
-                            Icon="{ui:SymbolIcon Save24}" />
-                    </Grid>
-                </StackPanel>
-            </ui:Card>
-
-            <ui:Card
-                Margin="0,0,0,24"
-                Padding="20"
-                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
-                <StackPanel helpers:StackPanelSpacing.Spacing="12">
-                    <ui:TextBlock FontTypography="Subtitle" Text="{Binding EditorTitle}" />
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Center" Text="Game name:" />
-                        <ui:TextBox Grid.Column="1" Text="{Binding EditGameName, UpdateSourceTrigger=PropertyChanged}" />
-                    </Grid>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Center" Text="Vortex staging:" />
-                        <ui:TextBox Grid.Column="1" Text="{Binding EditVortexStagingPath, UpdateSourceTrigger=PropertyChanged}" />
-                        <ComboBox
-                            Grid.Column="2"
-                            Width="72"
-                            Margin="12,0,0,0"
-                            ItemsSource="{Binding AvailableDrives}"
-                            SelectedItem="{Binding EditVortexStagingDrive, Mode=TwoWay}"
-                            ToolTip="Change only the drive letter" />
-                        <ui:Button
-                            Grid.Column="3"
-                            Margin="12,0,0,0"
-                            Command="{Binding BrowseVortexStagingPathCommand}"
-                            Content="Browse"
-                            Icon="{ui:SymbolIcon FolderOpen24}" />
-                    </Grid>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Center" Text="Game root:" />
-                        <ui:TextBox Grid.Column="1" Text="{Binding EditGameRootPath, UpdateSourceTrigger=PropertyChanged}" />
-                        <ComboBox
-                            Grid.Column="2"
-                            Width="72"
-                            Margin="12,0,0,0"
-                            ItemsSource="{Binding AvailableDrives}"
-                            SelectedItem="{Binding EditGameRootDrive, Mode=TwoWay}"
-                            ToolTip="Change only the drive letter" />
-                        <ui:Button
-                            Grid.Column="3"
-                            Margin="12,0,0,0"
-                            Command="{Binding BrowseGameRootPathCommand}"
-                            Content="Browse"
-                            Icon="{ui:SymbolIcon FolderOpen24}" />
-                    </Grid>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Center" Text="Vortex AppData:" />
-                        <ui:TextBox Grid.Column="1" Text="{Binding EditVortexAppDataPath, UpdateSourceTrigger=PropertyChanged}" />
-                        <ComboBox
-                            Grid.Column="2"
-                            Width="72"
-                            Margin="12,0,0,0"
-                            ItemsSource="{Binding AvailableDrives}"
-                            SelectedItem="{Binding EditVortexAppDataDrive, Mode=TwoWay}"
-                            ToolTip="Change only the drive letter" />
-                        <ui:Button
-                            Grid.Column="3"
-                            Margin="12,0,0,0"
-                            Command="{Binding BrowseVortexAppDataPathCommand}"
-                            Content="Browse"
-                            Icon="{ui:SymbolIcon FolderOpen24}" />
-                    </Grid>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBlock VerticalAlignment="Top" Text="Custom folders:" />
-                        <ui:TextBox
-                            Grid.Column="1"
-                            Height="90"
-                            AcceptsReturn="True"
-                            FontFamily="Consolas"
-                            Text="{Binding EditCustomFoldersText, UpdateSourceTrigger=PropertyChanged}"
-                            VerticalScrollBarVisibility="Auto" />
-                        <ui:Button
-                            Grid.Column="2"
-                            Margin="12,0,0,0"
-                            VerticalAlignment="Top"
-                            Command="{Binding AddCustomFolderCommand}"
-                            Content="Add folder"
+                            Command="{Binding AddProfileCommand}"
+                            Content="Add profile"
                             Icon="{ui:SymbolIcon Add24}" />
-                    </Grid>
-                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="One folder per line." />
+                    </StackPanel>
+                </Grid>
 
-                    <CheckBox Content="Apply global ignore list to this profile" IsChecked="{Binding EditUseIgnoreList}" />
+                <!--  Find on other disk  -->
+                <StackPanel Visibility="{Binding IsFindVisible, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Find on other disk" />
 
-                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <controls:SettingsCard
+                        Description="Pick one of the profile paths. The same path is searched on all other local disks."
+                        Header="Path to look for"
+                        Icon="{ui:SymbolIcon Search24}"
+                        IsStacked="True">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox
+                                    HorizontalAlignment="Stretch"
+                                    DisplayMemberPath="Display"
+                                    ItemsSource="{Binding FindablePaths}"
+                                    SelectedItem="{Binding SelectedFindPath, Mode=TwoWay}" />
+                                <ui:Button
+                                    Grid.Column="1"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding FindOnOtherDisksCommand}"
+                                    Content="Find"
+                                    Icon="{ui:SymbolIcon Search24}" />
+                            </Grid>
+
+                            <TextBlock
+                                Margin="0,8,0,0"
+                                Style="{StaticResource CaptionTextStyle}"
+                                Text="{Binding FindMessage}"
+                                Visibility="{Binding HasFindMessage, Converter={StaticResource BoolToVisibility}}" />
+
+                            <Grid Margin="0,8,0,0" Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox
+                                    HorizontalAlignment="Stretch"
+                                    ItemsSource="{Binding FoundCandidates}"
+                                    SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}" />
+                                <ui:Button
+                                    Grid.Column="1"
+                                    Margin="8,0,0,0"
+                                    Appearance="Primary"
+                                    Command="{Binding ApplyCandidateCommand}"
+                                    Content="Use this path and save"
+                                    Icon="{ui:SymbolIcon Save24}" />
+                            </Grid>
+                        </StackPanel>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!--  Profile editor  -->
+                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding EditorTitle}" />
+
+                    <controls:SettingsCard
+                        Description="Used for the backup folder name."
+                        Header="Game name"
+                        Icon="{ui:SymbolIcon Games24}">
+                        <ui:TextBox Width="320" Text="{Binding EditGameName, UpdateSourceTrigger=PropertyChanged}" />
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Vortex mod staging folder. Each top-level mod folder becomes its own archive."
+                        Header="Vortex staging folder"
+                        Icon="{ui:SymbolIcon Archive24}"
+                        IsStacked="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Text="{Binding EditVortexStagingPath, UpdateSourceTrigger=PropertyChanged}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Width="76"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding EditVortexStagingDrive, Mode=TwoWay}"
+                                ToolTip="Change only the drive letter" />
+                            <ui:Button
+                                Grid.Column="2"
+                                Margin="8,0,0,0"
+                                Command="{Binding BrowseVortexStagingPathCommand}"
+                                Content="Browse"
+                                Icon="{ui:SymbolIcon FolderOpen24}" />
+                        </Grid>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Game installation folder. Used for vanilla snapshots, purge and game config backups."
+                        Header="Game folder"
+                        Icon="{ui:SymbolIcon Folder24}"
+                        IsStacked="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Text="{Binding EditGameRootPath, UpdateSourceTrigger=PropertyChanged}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Width="76"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding EditGameRootDrive, Mode=TwoWay}"
+                                ToolTip="Change only the drive letter" />
+                            <ui:Button
+                                Grid.Column="2"
+                                Margin="8,0,0,0"
+                                Command="{Binding BrowseGameRootPathCommand}"
+                                Content="Browse"
+                                Icon="{ui:SymbolIcon FolderOpen24}" />
+                        </Grid>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Vortex settings, profiles and load order. Usually %APPDATA%\Vortex."
+                        Header="Vortex AppData folder"
+                        Icon="{ui:SymbolIcon Storage24}"
+                        IsStacked="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Text="{Binding EditVortexAppDataPath, UpdateSourceTrigger=PropertyChanged}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Width="76"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding EditVortexAppDataDrive, Mode=TwoWay}"
+                                ToolTip="Change only the drive letter" />
+                            <ui:Button
+                                Grid.Column="2"
+                                Margin="8,0,0,0"
+                                Command="{Binding BrowseVortexAppDataPathCommand}"
+                                Content="Browse"
+                                Icon="{ui:SymbolIcon FolderOpen24}" />
+                        </Grid>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Extra folders to back up, one per line. For example add-on folders of games not managed by Vortex."
+                        Header="Custom folders"
+                        Icon="{ui:SymbolIcon FolderAdd24}"
+                        IsStacked="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox
+                                Height="96"
+                                AcceptsReturn="True"
+                                FontFamily="{StaticResource MonospaceFontFamily}"
+                                FontSize="13"
+                                Text="{Binding EditCustomFoldersText, UpdateSourceTrigger=PropertyChanged}"
+                                TextWrapping="NoWrap"
+                                VerticalScrollBarVisibility="Auto" />
+                            <ui:Button
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                VerticalAlignment="Top"
+                                Command="{Binding AddCustomFolderCommand}"
+                                Content="Add folder"
+                                Icon="{ui:SymbolIcon Add24}" />
+                        </Grid>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Skip files that match the global ignore patterns from Settings."
+                        Header="Use global ignore list"
+                        Icon="{ui:SymbolIcon Filter24}">
+                        <ui:ToggleSwitch
+                            IsChecked="{Binding EditUseIgnoreList}"
+                            OffContent="Off"
+                            OnContent="On" />
+                    </controls:SettingsCard>
+
+                    <StackPanel Style="{StaticResource ActionBarPanelStyle}">
+                        <ui:Button Command="{Binding CancelEditCommand}" Content="Cancel" />
                         <ui:Button
-                            Margin="0,0,12,0"
-                            Command="{Binding CancelEditCommand}"
-                            Content="Cancel" />
-                        <ui:Button
+                            Margin="8,0,0,0"
                             Appearance="Primary"
                             Command="{Binding SaveProfileCommand}"
-                            Content="Save Profile"
+                            Content="Save profile"
                             Icon="{ui:SymbolIcon Save24}" />
                     </StackPanel>
                 </StackPanel>
-            </ui:Card>
 
-            <ui:TextBlock
-                Margin="0,0,0,24"
-                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                Text="No profiles yet. Press &quot;Add New Profile&quot; to create one."
-                Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}" />
+                <!--  Profiles  -->
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Profiles" />
 
-            <ItemsControl ItemsSource="{Binding Profiles}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <ui:Card Margin="0,0,0,24" Padding="20">
-                            <StackPanel helpers:StackPanelSpacing.Spacing="12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:TextBlock
-                                        VerticalAlignment="Center"
-                                        FontTypography="Subtitle"
-                                        Text="{Binding GameName}" />
-                                    <Button
-                                        Grid.Column="1"
-                                        Command="{Binding DataContext.EditProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                        CommandParameter="{Binding}"
-                                        Content="Edit Profile" />
-                                    <Button
-                                        Grid.Column="2"
-                                        Margin="12,0,0,0"
-                                        Command="{Binding DataContext.DeleteProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                        CommandParameter="{Binding}"
-                                        Content="Delete" />
-                                </Grid>
+                <Border Style="{StaticResource CardBorderStyle}" Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Style="{StaticResource CaptionTextStyle}" Text="No profiles yet. Select &quot;Add profile&quot; to create one." />
+                </Border>
 
-                                <Grid Visibility="{Binding HasVortexStagingPath, Converter={StaticResource BoolToVisibility}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:TextBlock
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="Vortex Staging:" />
-                                    <TextBox
-                                        Grid.Column="1"
-                                        IsReadOnly="True"
-                                        Text="{Binding VortexStagingPath, Mode=OneWay}" />
-                                </Grid>
-
-                                <Grid Visibility="{Binding HasGameRootPath, Converter={StaticResource BoolToVisibility}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:TextBlock
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="Game Root:" />
-                                    <TextBox
-                                        Grid.Column="1"
-                                        IsReadOnly="True"
-                                        Text="{Binding GameRootPath, Mode=OneWay}" />
-                                </Grid>
-
-                                <Grid Visibility="{Binding HasVortexAppDataPath, Converter={StaticResource BoolToVisibility}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:TextBlock
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="Vortex AppData:" />
-                                    <TextBox
-                                        Grid.Column="1"
-                                        IsReadOnly="True"
-                                        Text="{Binding VortexAppDataPath, Mode=OneWay}" />
-                                </Grid>
-
-                                <StackPanel helpers:StackPanelSpacing.Spacing="8" Visibility="{Binding HasCustomFolders, Converter={StaticResource BoolToVisibility}}">
-                                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Custom Folders Included:" />
-                                    <Border
-                                        Padding="12"
-                                        Background="{DynamicResource ControlFillColorDefaultBrush}"
-                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="4">
-                                        <TextBlock
-                                            FontFamily="Consolas"
+                <ItemsControl ItemsSource="{Binding Profiles}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                Margin="0,0,0,4"
+                                Padding="0"
+                                Style="{StaticResource CardBorderStyle}">
+                                <StackPanel>
+                                    <Grid Margin="16,12,16,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:SymbolIcon
+                                            Margin="2,0,20,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="20"
                                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                            Text="{Binding CustomFoldersText}"
-                                            TextWrapping="Wrap" />
+                                            Symbol="Games24" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource BodyStrongTextStyle}"
+                                            Text="{Binding GameName}" />
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <Button
+                                                Command="{Binding DataContext.EditProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                CommandParameter="{Binding}"
+                                                Content="Edit" />
+                                            <Button
+                                                Margin="8,0,0,0"
+                                                Command="{Binding DataContext.DeleteProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                CommandParameter="{Binding}"
+                                                Content="Delete" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border
+                                        Padding="58,10,16,14"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="0,1,0,0">
+                                        <StackPanel>
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexStagingPath, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Vortex staging" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource PathTextStyle}"
+                                                    Text="{Binding VortexStagingPath}" />
+                                            </Grid>
+
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasGameRootPath, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Game folder" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource PathTextStyle}"
+                                                    Text="{Binding GameRootPath}" />
+                                            </Grid>
+
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexAppDataPath, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Vortex AppData" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource PathTextStyle}"
+                                                    Text="{Binding VortexAppDataPath}" />
+                                            </Grid>
+
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasCustomFolders, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Custom folders" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource PathTextStyle}"
+                                                    Text="{Binding CustomFoldersText}"
+                                                    TextTrimming="None"
+                                                    TextWrapping="Wrap" />
+                                            </Grid>
+
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Global ignore list" />
+                                                <TextBlock Grid.Column="1">
+                                                    <TextBlock.Style>
+                                                        <Style BasedOn="{StaticResource CaptionTextStyle}" TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                            <Setter Property="Text" Value="Used" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding UseIgnoreList}" Value="False">
+                                                                    <Setter Property="Text" Value="Not used" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </StackPanel>
                                     </Border>
                                 </StackPanel>
-
-                                <CheckBox
-                                    Content="Apply global ignore list to this profile"
-                                    IsChecked="{Binding UseIgnoreList, Mode=OneWay}"
-                                    IsEnabled="False" />
-                            </StackPanel>
-                        </ui:Card>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
-</Page>
+</Page>

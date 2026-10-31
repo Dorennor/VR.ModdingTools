@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
+using UniversalBackupTool.Interface.Interfaces.Appearance;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
@@ -24,6 +25,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         private readonly ISafetyBackupService _safetyBackupService;
         private readonly IBackupJobStateService _backupJobStateService;
         private readonly IConfirmationService _confirmationService;
+        private readonly IThemeService _themeService;
 
         private bool _closeRequested;
 
@@ -33,6 +35,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             ISafetyBackupService safetyBackupService,
             IBackupJobStateService backupJobStateService,
             IConfirmationService confirmationService,
+            IThemeService themeService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -42,6 +45,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             _safetyBackupService = safetyBackupService ?? throw new ArgumentNullException(nameof(safetyBackupService));
             _backupJobStateService = backupJobStateService ?? throw new ArgumentNullException(nameof(backupJobStateService));
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
+            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
 
             OutputEntries = Output.Entries;
             Coordinator.StateChanged += (_, _) => UpdateOperationState();
@@ -82,6 +86,21 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         [ObservableProperty]
         private bool _isCancelling;
 
+        /// <summary>
+        /// Whether the Output tool window is shown. It opens automatically when an operation starts.
+        /// </summary>
+        [ObservableProperty]
+        private bool _isOutputVisible = true;
+
+        /// <summary>
+        /// Left part of the status bar: "Ready" or the running operation and its current phase.
+        /// </summary>
+        [ObservableProperty]
+        private string _statusText = "Ready";
+
+        [ObservableProperty]
+        private string? _progressPercentText;
+
         public ReadOnlyObservableCollection<OutputEntry> OutputEntries { get; }
 
         [RelayCommand]
@@ -90,6 +109,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                                     var paths = _storagePathsProvider.GetPaths();
 
                                     Settings = await _settingsStore.LoadAsync(paths.SettingsFilePath);
+
+                                    _themeService.Apply(Settings.Theme);
 
                                     await _safetyBackupService.CleanupExpiredAsync(Settings);
 
@@ -108,6 +129,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
 
         [RelayCommand]
         private void CancelOperation() => Coordinator.CancelCurrent();
+
+        [RelayCommand]
+        private void HideOutput() => IsOutputVisible = false;
+
+        [RelayCommand]
+        private void ToggleOutput() => IsOutputVisible = !IsOutputVisible;
 
         /// <summary>
         /// Called when the window is closing. Returns true when it may close now. While an operation is running the user is
@@ -139,6 +166,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
 
         private void UpdateOperationState()
         {
+            var wasRunning = IsOperationRunning;
+
             IsOperationRunning = Coordinator.IsOperationRunning;
             OperationTitle = Coordinator.CurrentOperationName;
             IsCancelling = Coordinator.IsCancellationRequested;
@@ -150,7 +179,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                 ProgressPercent = 0;
                 IsProgressIndeterminate = false;
                 ProgressText = null;
+                ProgressPercentText = null;
                 CurrentItemText = null;
+                StatusText = "Ready";
 
                 if (_closeRequested)
                     CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -158,10 +189,17 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                 return;
             }
 
+            if (!wasRunning)
+                IsOutputVisible = true;
+
             IsProgressIndeterminate = progress is null || (progress.TotalBytes <= 0 && progress.TotalFiles <= 0);
             ProgressPercent = progress is null ? 0 : progress.Fraction * 100;
+            ProgressPercentText = IsProgressIndeterminate ? null : $"{ProgressPercent:0}%";
             ProgressText = progress is null ? "Starting..." : FormatProgress(progress);
             CurrentItemText = progress?.CurrentItem;
+            StatusText = IsCancelling
+                ? $"{OperationTitle}: cancelling..."
+                : $"{OperationTitle}  ·  {ProgressText}";
         }
 
         private static string FormatProgress(BackupProgress progress)
@@ -172,7 +210,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             var text = $"{progress.Phase}: {progress.FilesProcessed:N0} / {progress.TotalFiles:N0} files";
 
             if (progress.TotalBytes > 0)
-                text += $" ({FormatBytes(progress.BytesProcessed)} / {FormatBytes(progress.TotalBytes)}, {progress.Fraction:P0})";
+                text += $" ({FormatBytes(progress.BytesProcessed)} / {FormatBytes(progress.TotalBytes)})";
 
             return text;
         }

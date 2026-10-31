@@ -8,24 +8,20 @@
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     xmlns:views="clr-namespace:UniversalBackupTool.UI.Views"
     Title="{Binding ApplicationTitle}"
-    Width="1200"
-    Height="850"
+    Width="1240"
+    Height="860"
     MinWidth="900"
     MinHeight="600"
     ExtendsContentIntoTitleBar="True"
+    Foreground="{DynamicResource TextFillColorPrimaryBrush}"
     WindowBackdropType="Mica"
     WindowCornerPreference="Round"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
-    <ui:FluentWindow.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
-    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="200" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="220" MinHeight="90" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <ui:TitleBar Title="{Binding ApplicationTitle}" Grid.Row="0">
@@ -34,6 +30,11 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
+        <!--
+            The navigation pane runs the full window height (Settings at the bottom). The Output tool window and the
+            status bar live in ContentOverlay, docked to the bottom of the page area only; FrameMargin is kept equal to
+            their height (MainWindow.xaml.cs) so pages end right above them instead of being covered.
+        -->
         <ui:NavigationView
             x:Name="RootNavigation"
             Grid.Row="1"
@@ -42,7 +43,7 @@
             OpenPaneLength="260"
             PaneDisplayMode="Left">
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Dashboard" TargetPageType="{x:Type views:DashboardPage}">
+                <ui:NavigationViewItem Content="Profiles" TargetPageType="{x:Type views:DashboardPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Games24" />
                     </ui:NavigationViewItem.Icon>
@@ -65,173 +66,232 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.FooterMenuItems>
-        </ui:NavigationView>
 
-        <GridSplitter
-            Grid.Row="2"
-            Height="5"
-            HorizontalAlignment="Stretch"
-            Background="Transparent"
-            ResizeBehavior="PreviousAndNext"
-            ResizeDirection="Rows"
-            ShowsPreview="False" />
-
-        <Border
-            Grid.Row="3"
-            Padding="12,8,12,8"
-            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-            BorderThickness="0,1,0,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <ui:TextBlock
-                        Grid.Column="0"
-                        VerticalAlignment="Center"
-                        FontTypography="BodyStrong"
-                        Text="Output" />
-                    <Button
-                        Grid.Column="1"
-                        Padding="10,3"
-                        Click="OnCopyAllOutputClick"
-                        Content="Copy all"
-                        ToolTip="Copy every line of the output to the clipboard. Select lines and press Ctrl+C to copy only those." />
-                    <Button
-                        Grid.Column="2"
-                        Margin="6,0,0,0"
-                        Padding="10,3"
-                        Command="{Binding ClearOutputCommand}"
-                        Content="Clear" />
-                </Grid>
-
-                <Grid
-                    Grid.Row="1"
-                    Margin="0,8,0,0"
-                    Visibility="{Binding IsOperationRunning, Converter={StaticResource BoolToVisibility}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+            <ui:NavigationView.ContentOverlay>
+                <Grid x:Name="BottomDock" VerticalAlignment="Bottom">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock
+                    <!--  Drag grip to resize the Output tool window.  -->
+                    <Thumb
+                        x:Name="OutputResizeGrip"
                         Grid.Row="0"
-                        Grid.Column="0"
-                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                        TextTrimming="CharacterEllipsis">
-                        <Run FontWeight="SemiBold" Text="{Binding OperationTitle, Mode=OneWay}" />
-                        <Run Text="  " />
-                        <Run Text="{Binding ProgressText, Mode=OneWay}" />
-                    </TextBlock>
-                    <ProgressBar
-                        Grid.Row="1"
-                        Grid.Column="0"
                         Height="6"
-                        Margin="0,6,0,0"
-                        IsIndeterminate="{Binding IsProgressIndeterminate}"
-                        Maximum="100"
-                        Minimum="0"
-                        Value="{Binding ProgressPercent, Mode=OneWay}" />
-                    <TextBlock
-                        Grid.Row="2"
-                        Grid.Column="0"
-                        Margin="0,4,0,0"
-                        FontSize="12"
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="{Binding CurrentItemText}"
-                        TextTrimming="CharacterEllipsis" />
-                    <Button
-                        Grid.Row="0"
-                        Grid.RowSpan="3"
-                        Grid.Column="1"
-                        Margin="12,0,0,0"
-                        VerticalAlignment="Center"
-                        Command="{Binding CancelOperationCommand}">
-                        <Button.Style>
-                            <Style BasedOn="{StaticResource {x:Type Button}}" TargetType="Button">
-                                <Setter Property="Content" Value="Cancel" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCancelling}" Value="True">
-                                        <Setter Property="Content" Value="Cancelling..." />
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </Grid>
+                        Cursor="SizeNS"
+                        DragDelta="OnOutputResizeGripDragDelta"
+                        ToolTip="Drag to resize the Output window">
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <Border Background="Transparent">
+                                    <Border
+                                        Height="1"
+                                        VerticalAlignment="Bottom"
+                                        Background="{DynamicResource CardStrokeColorDefaultBrush}" />
+                                </Border>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
 
-                <ListBox
-                    Grid.Row="2"
-                    Margin="0,8,0,0"
-                    helpers:OutputListBehavior.IsEnabled="True"
-                    FontFamily="Cascadia Mono, Consolas"
-                    FontSize="12"
-                    ItemsSource="{Binding OutputEntries}"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    SelectionMode="Extended"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListBox.ItemContainerStyle>
-                        <Style BasedOn="{StaticResource {x:Type ListBoxItem}}" TargetType="ListBoxItem">
-                            <Setter Property="Padding" Value="6,1" />
-                            <Setter Property="Margin" Value="0" />
-                            <Setter Property="MinHeight" Value="0" />
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
+                    <!--  Output tool window (Visual Studio style): slim title strip with icon commands, flat monospace log.  -->
+                    <Border
+                        x:Name="OutputPanel"
+                        Grid.Row="1"
+                        Height="170"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border
+                                Grid.Row="0"
+                                Padding="12,0,4,0"
+                                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="14"
+                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                            Symbol="WindowConsole20" />
+                                        <TextBlock Style="{StaticResource ToolWindowTitleTextStyle}" Text="Output" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <ui:Button
+                                            Width="28"
+                                            Height="26"
+                                            Padding="0"
+                                            Appearance="Transparent"
+                                            Click="OnCopyAllOutputClick"
+                                            Icon="{ui:SymbolIcon Copy20}"
+                                            ToolTip="Copy all (select lines and press Ctrl+C to copy only those)" />
+                                        <ui:Button
+                                            Width="28"
+                                            Height="26"
+                                            Padding="0"
+                                            Appearance="Transparent"
+                                            Command="{Binding ClearOutputCommand}"
+                                            Icon="{ui:SymbolIcon Delete20}"
+                                            ToolTip="Clear all" />
+                                        <ui:Button
+                                            Width="28"
+                                            Height="26"
+                                            Padding="0"
+                                            Appearance="Transparent"
+                                            Command="{Binding HideOutputCommand}"
+                                            Icon="{ui:SymbolIcon Dismiss16}"
+                                            ToolTip="Hide Output (show it again from the status bar)" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <ListBox
+                                Grid.Row="1"
+                                Padding="0,4"
+                                helpers:OutputListBehavior.IsEnabled="True"
+                                FontFamily="{StaticResource MonospaceFontFamily}"
+                                FontSize="12"
+                                ItemsSource="{Binding OutputEntries}"
+                                SelectionMode="Extended"
+                                Style="{StaticResource FlatListBoxStyle}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock
+                                                Grid.Column="0"
+                                                Margin="0,0,12,0"
+                                                Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                Text="{Binding TimeText}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Text="{Binding Message}"
+                                                TextWrapping="Wrap">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Severity}" Value="Success">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
+                    <!--  Status bar (Visual Studio style): operation and progress on the left, Output toggle on the right.  -->
+                    <Border
+                        Grid.Row="2"
+                        Height="28"
+                        Padding="12,0,4,0"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                        BorderThickness="0,1,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel
+                                Grid.Column="0"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                ToolTip="{Binding CurrentItemText}">
+                                <ui:ProgressRing
+                                    Width="12"
+                                    Height="12"
+                                    Margin="0,0,8,0"
+                                    IsIndeterminate="True"
+                                    Visibility="{Binding IsOperationRunning, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Style="{StaticResource StatusBarTextStyle}" Text="{Binding StatusText}" />
+                            </StackPanel>
+
+                            <StackPanel
+                                Grid.Column="1"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Visibility="{Binding IsOperationRunning, Converter={StaticResource BoolToVisibility}}">
+                                <ProgressBar
+                                    Width="160"
+                                    Height="4"
+                                    VerticalAlignment="Center"
+                                    IsIndeterminate="{Binding IsProgressIndeterminate}"
+                                    Maximum="100"
+                                    Minimum="0"
+                                    Value="{Binding ProgressPercent, Mode=OneWay}" />
                                 <TextBlock
-                                    Grid.Column="0"
-                                    Margin="0,0,10,0"
-                                    Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                    Text="{Binding TimeText}" />
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="{Binding Message}"
-                                    TextWrapping="Wrap">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                    MinWidth="36"
+                                    Margin="8,0,0,0"
+                                    Style="{StaticResource StatusBarTextStyle}"
+                                    Text="{Binding ProgressPercentText}" />
+                                <ui:Button
+                                    Height="22"
+                                    Margin="4,0,0,0"
+                                    Padding="8,0"
+                                    Appearance="Transparent"
+                                    Command="{Binding CancelOperationCommand}"
+                                    FontSize="12"
+                                    Icon="{ui:SymbolIcon Dismiss16}"
+                                    ToolTip="Cancel the running operation">
+                                    <ui:Button.Style>
+                                        <Style BasedOn="{StaticResource {x:Type ui:Button}}" TargetType="ui:Button">
+                                            <Setter Property="Content" Value="Cancel" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Severity}" Value="Success">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Severity}" Value="Error">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                <DataTrigger Binding="{Binding IsCancelling}" Value="True">
+                                                    <Setter Property="Content" Value="Cancelling..." />
+                                                    <Setter Property="IsEnabled" Value="False" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Grid>
-        </Border>
+                                    </ui:Button.Style>
+                                </ui:Button>
+                            </StackPanel>
+
+                            <ui:Button
+                                Grid.Column="2"
+                                Height="22"
+                                Margin="12,0,0,0"
+                                Padding="8,0"
+                                Appearance="Transparent"
+                                Command="{Binding ToggleOutputCommand}"
+                                Content="Output"
+                                FontSize="12"
+                                Icon="{ui:SymbolIcon PanelBottom20}"
+                                ToolTip="Show or hide the Output window" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </ui:NavigationView.ContentOverlay>
+        </ui:NavigationView>
     </Grid>
 </ui:FluentWindow>

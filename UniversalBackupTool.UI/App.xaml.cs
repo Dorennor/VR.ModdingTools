@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
+using UniversalBackupTool.Interface.Interfaces.Appearance;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.FileSystem;
@@ -81,6 +82,7 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<IBackupJobRunner, BackupJobRunner>();
             services.AddSingleton<IRestoreService, RestoreService>();
             services.AddSingleton<IFolderPickerService, FolderPickerService>();
+            services.AddSingleton<IThemeService, ThemeService>();
             services.AddSingleton<INavigationViewPageProvider, ServiceProviderPageProvider>();
 
             services.AddSingleton<MainViewModel>();

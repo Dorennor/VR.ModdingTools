@@ -75,6 +75,96 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         public ObservableCollection<BackupTargetItemViewModel> Targets { get; } = [];
 
+        /// <summary>
+        /// Targets matching <see cref="TargetFilter"/>; this is what the profile picker shows. Selection lives on the items,
+        /// so filtering never changes what is selected.
+        /// </summary>
+        public ObservableCollection<BackupTargetItemViewModel> VisibleTargets { get; } = [];
+
+        [ObservableProperty]
+        private string _targetFilter = string.Empty;
+
+        partial void OnTargetFilterChanged(string value) => RefreshVisibleTargets();
+
+        public bool HasNoVisibleTargets => Targets.Count > 0 && VisibleTargets.Count == 0;
+
+        public string SelectedTargetsSummary
+        {
+            get
+            {
+                var selected = Targets.Count(target => target.IsSelected);
+
+                return Targets.Count == 0
+                    ? "No profiles yet. Add one on the Profiles page."
+                    : selected == 0
+                        ? $"None of {Targets.Count} selected"
+                        : $"{selected} of {Targets.Count} selected";
+            }
+        }
+
+        /// <summary>
+        /// True when every listed game (the filtered ones while searching) is selected; the button then deselects them.
+        /// </summary>
+        public bool AreAllVisibleTargetsSelected => VisibleTargets.Count > 0 && VisibleTargets.All(target => target.IsSelected);
+
+        public string SelectAllButtonText => AreAllVisibleTargetsSelected ? "Deselect all" : "Select all";
+
+        [RelayCommand]
+        private void ToggleSelectAllTargets()
+        {
+            // Acts on the games currently listed, so with a search it only affects the matching ones.
+            var select = !AreAllVisibleTargetsSelected;
+
+            foreach (var target in VisibleTargets)
+                target.IsSelected = select;
+        }
+
+        [RelayCommand]
+        private void ClearTargetSelection()
+        {
+            foreach (var target in Targets)
+                target.IsSelected = false;
+        }
+
+        /// <summary>
+        /// After a finished backup: no games selected, components back to the defaults (staging and Vortex AppData).
+        /// </summary>
+        private void ResetBackupSelection()
+        {
+            ClearTargetSelection();
+
+            IncludeStaging = true;
+            IncludeGameConfigs = false;
+            IncludeVortexAppData = true;
+            IncludeCustomFolders = false;
+        }
+
+        private void OnTargetPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(BackupTargetItemViewModel.IsSelected))
+                NotifySelectionChanged();
+        }
+
+        private void NotifySelectionChanged()
+        {
+            OnPropertyChanged(nameof(SelectedTargetsSummary));
+            OnPropertyChanged(nameof(AreAllVisibleTargetsSelected));
+            OnPropertyChanged(nameof(SelectAllButtonText));
+        }
+
+        private void RefreshVisibleTargets()
+        {
+            var filter = TargetFilter.Trim();
+
+            VisibleTargets.Clear();
+
+            foreach (var target in Targets.Where(target => filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase)))
+                VisibleTargets.Add(target);
+
+            OnPropertyChanged(nameof(HasNoVisibleTargets));
+            NotifySelectionChanged();
+        }
+
         public ObservableCollection<string> RestorePlanLines { get; } = [];
 
         public IReadOnlyList<string> AvailableDrives { get; } = DriveInfo.GetDrives()
@@ -193,12 +283,20 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
                     var previouslySelected = Targets.Where(target => target.IsSelected).Select(target => target.Profile.Id).ToHashSet();
 
+                    foreach (var target in Targets)
+                        target.PropertyChanged -= OnTargetPropertyChanged;
+
                     Targets.Clear();
 
-                    foreach (var profile in _allProfiles)
-                        Targets.Add(new BackupTargetItemViewModel(profile, previouslySelected.Contains(profile.Id)));
+                    foreach (var profile in _allProfiles.OrderBy(profile => profile.GameName, StringComparer.CurrentCultureIgnoreCase))
+                    {
+                        var target = new BackupTargetItemViewModel(profile, previouslySelected.Contains(profile.Id));
+                        target.PropertyChanged += OnTargetPropertyChanged;
+                        Targets.Add(target);
+                    }
 
                     OnPropertyChanged(nameof(HasNoProfiles));
+                    RefreshVisibleTargets();
 
                     var job = await _backupJobStateService.LoadAsync(paths.ActiveBackupJobFilePath);
 
@@ -250,6 +348,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
                 await ReloadPausedJobAsync();
                 ReportBackupResult(batch, settings);
+
+                // Only after the backup ran to the end (also when some files were locked and Continue Backup is offered).
+                // A cancelled or failed backup keeps the selection so it can be retried.
+                ResetBackupSelection();
             });
         }
 

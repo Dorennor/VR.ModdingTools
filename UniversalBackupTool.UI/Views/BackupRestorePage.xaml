@@ -2,6 +2,7 @@
     x:Class="UniversalBackupTool.UI.Views.BackupRestorePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:UniversalBackupTool.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -9,221 +10,319 @@
     Title="Backup &amp; Restore"
     d:DesignHeight="800"
     d:DesignWidth="900"
-    ScrollViewer.CanContentScroll="False"
+    Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
     <Page.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <!--  Drive picker + on/off switch on the right of a restore component row.  -->
+        <Style x:Key="RestoreDriveComboStyle" BasedOn="{StaticResource {x:Type ComboBox}}" TargetType="ComboBox">
+            <Setter Property="Width" Value="84" />
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="ToolTip" Value="Drive to restore to" />
+        </Style>
     </Page.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="40,20,40,40">
-            <ui:TextBlock FontTypography="Title" Text="Backup &amp; Restore" />
-            <ui:TextBlock
-                Margin="0,4,0,24"
-                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                Text="Execute backup jobs or restore state from Google Drive." />
 
-            <ui:Card
-                Margin="0,0,0,20"
-                Padding="16"
-                Visibility="{Binding HasPausedJob, Converter={StaticResource BoolToVisibility}}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <ui:TextBlock FontTypography="BodyStrong" Text="Backup needs to continue" />
-                        <ui:TextBlock
-                            Margin="0,4,16,0"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="{Binding PausedJobMessage}"
-                            TextWrapping="Wrap" />
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="1072" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Style="{StaticResource PageContentPanelStyle}">
+                <Grid Style="{StaticResource PageHeaderGridStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Backup &amp; Restore" />
+                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Create incremental snapshots of your games, or restore a previous one." />
                     </StackPanel>
-                    <StackPanel
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal">
+                </Grid>
+
+                <!--  Paused job notice, styled like a Windows 11 warning InfoBar.  -->
+                <controls:SettingsCard
+                    Margin="0,20,0,0"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    Description="{Binding PausedJobMessage}"
+                    Header="A backup needs to continue"
+                    Visibility="{Binding HasPausedJob, Converter={StaticResource BoolToVisibility}}">
+                    <controls:SettingsCard.Icon>
+                        <ui:SymbolIcon Foreground="{DynamicResource SystemFillColorCautionBrush}" Symbol="Warning24" />
+                    </controls:SettingsCard.Icon>
+                    <StackPanel Orientation="Horizontal">
                         <ui:Button
                             Appearance="Primary"
                             Command="{Binding ResumeCommand}"
-                            Content="Continue Backup"
+                            Content="Continue backup"
                             IsEnabled="{Binding CanStartOperation}" />
-                        <Button
+                        <ui:Button
                             Margin="8,0,0,0"
                             Command="{Binding DiscardPausedJobCommand}"
                             Content="Discard"
                             IsEnabled="{Binding CanStartOperation}" />
                     </StackPanel>
-                </Grid>
-            </ui:Card>
+                </controls:SettingsCard>
 
-            <ui:Card Margin="0,0,0,24" Padding="20">
-                <StackPanel helpers:StackPanelSpacing.Spacing="20">
-                    <ui:TextBlock FontTypography="Subtitle" Text="Create Backup" />
+                <!--  Create backup  -->
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Create backup" />
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="40" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                <!--
+                    Profile picker sized for many games: search, select all / clear, live "N of M selected",
+                    and a bounded three-column grid that scrolls (wheel passes to the page at the edges).
+                -->
+                <Border
+                    Margin="0,0,0,4"
+                    Padding="16,12"
+                    Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <Grid MinHeight="42">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon
+                                Margin="2,0,20,0"
+                                VerticalAlignment="Center"
+                                FontSize="20"
+                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                Symbol="Games24" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource BodyTextStyle}" Text="Profiles" />
+                                <TextBlock
+                                    Margin="0,2,0,0"
+                                    Style="{StaticResource CaptionTextStyle}"
+                                    Text="{Binding SelectedTargetsSummary}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                                <ui:Button
+                                    Command="{Binding ToggleSelectAllTargetsCommand}"
+                                    Content="{Binding SelectAllButtonText}"
+                                    ToolTip="Select or deselect every game in the list (only the matching ones while searching)" />
+                                <ui:Button
+                                    Margin="8,0,0,0"
+                                    Command="{Binding ClearTargetSelectionCommand}"
+                                    Content="Clear" />
+                            </StackPanel>
+                        </Grid>
 
-                        <StackPanel Grid.Column="0" helpers:StackPanelSpacing.Spacing="4">
-                            <ui:TextBlock
-                                Margin="0,0,0,4"
-                                FontTypography="BodyStrong"
-                                Text="Target Profiles" />
-                            <ui:TextBlock
-                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                Text="No profiles yet. Add one on the Dashboard."
-                                Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}" />
-                            <ItemsControl ItemsSource="{Binding Targets}">
+                        <StackPanel Margin="42,12,0,0" Visibility="{Binding HasNoProfiles, Converter={StaticResource InverseBoolToVisibility}}">
+                            <ui:TextBox
+                                Icon="{ui:SymbolIcon Search24}"
+                                PlaceholderText="Search games"
+                                Text="{Binding TargetFilter, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <Border
+                                Margin="0,8,0,0"
+                                Padding="8,6"
+                                Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{DynamicResource ControlCornerRadius}">
+                                <Grid>
+                                    <ScrollViewer
+                                        MaxHeight="232"
+                                        helpers:NestedScrollBehavior.PassWheelAtEdges="True"
+                                        HorizontalScrollBarVisibility="Disabled"
+                                        VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding VisibleTargets}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid VerticalAlignment="Top" Columns="3" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox
+                                                        Margin="4,2"
+                                                        IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                        ToolTip="{Binding GameName}">
+                                                        <TextBlock
+                                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                                            Text="{Binding GameName}"
+                                                            TextTrimming="CharacterEllipsis" />
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <TextBlock
+                                        Margin="4,6"
+                                        Style="{StaticResource CaptionTextStyle}"
+                                        Text="No games match the search."
+                                        Visibility="{Binding HasNoVisibleTargets, Converter={StaticResource BoolToVisibility}}" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <controls:SettingsCard
+                    Description="One archive per mod. Unchanged mods reuse their previous archive, so only updated mods are packed again."
+                    Header="Staging folders"
+                    Icon="{ui:SymbolIcon Archive24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeStaging, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="Files in the game folder that were added or changed since the vanilla snapshot."
+                    Header="Game configs"
+                    Icon="{ui:SymbolIcon Settings24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeGameConfigs, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="Vortex settings, profiles and load order."
+                    Header="Vortex AppData"
+                    Icon="{ui:SymbolIcon Storage24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeVortexAppData, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="Extra folders listed in each profile."
+                    Header="Custom folders"
+                    Icon="{ui:SymbolIcon FolderAdd24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeCustomFolders, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <StackPanel Style="{StaticResource ActionBarPanelStyle}">
+                    <ui:Button
+                        Appearance="Primary"
+                        Command="{Binding StartBackupCommand}"
+                        Content="Start backup"
+                        Icon="{ui:SymbolIcon ArrowUpload24}"
+                        IsEnabled="{Binding CanStartOperation}" />
+                </StackPanel>
+
+                <!--  Restore  -->
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Restore" />
+
+                <controls:SettingsCard
+                    Description="{Binding RestoreSummary, TargetNullValue='Select a dated backup folder, for example ...\\Game\\staging\\2026-10-31_12-00-00.'}"
+                    Header="Backup to restore"
+                    Icon="{ui:SymbolIcon History24}">
+                    <ui:Button
+                        Command="{Binding BrowseRestoreFolderCommand}"
+                        Content="Browse..."
+                        Icon="{ui:SymbolIcon FolderOpen24}"
+                        IsEnabled="{Binding IsIdle}" />
+                </controls:SettingsCard>
+
+                <StackPanel Visibility="{Binding HasRestoreManifest, Converter={StaticResource BoolToVisibility}}">
+                    <controls:SettingsCard
+                        Description="Mod folders from the staging snapshot."
+                        Header="Staging folders"
+                        Icon="{ui:SymbolIcon Archive24}"
+                        Visibility="{Binding RestoreHasStaging, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreStagingDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreStaging, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Changed game files from the configs snapshot."
+                        Header="Game configs"
+                        Icon="{ui:SymbolIcon Settings24}"
+                        Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Vortex settings, profiles and load order."
+                        Header="Vortex AppData"
+                        Icon="{ui:SymbolIcon Storage24}"
+                        Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreAppDataDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreAppData, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Extra folders from the profile."
+                        Header="Custom folders"
+                        Icon="{ui:SymbolIcon FolderAdd24}"
+                        Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreCustomFoldersDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreCustomFolders, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <Border Margin="0,0,0,4" Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="Will be restored to" />
+                            <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding RestorePlanLines}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <CheckBox Content="{Binding GameName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                        <TextBlock
+                                            Margin="0,2"
+                                            Style="{StaticResource CaptionTextStyle}"
+                                            Text="{Binding}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <TextBlock
+                                Margin="0,10,0,0"
+                                Style="{StaticResource CaptionTextStyle}"
+                                Text="{Binding RestoreFolderPath, StringFormat='Source: {0}'}" />
                         </StackPanel>
+                    </Border>
 
-                        <StackPanel Grid.Column="2" helpers:StackPanelSpacing.Spacing="4">
-                            <ui:TextBlock
-                                Margin="0,0,0,4"
-                                FontTypography="BodyStrong"
-                                Text="Components to Backup" />
-                            <ui:TextBlock
-                                Margin="0,0,0,8"
-                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                Text="Staging mod folders are compared by file/folder metadata and cached SHA-256 hashes. Hashing runs alongside archive reads; unchanged files are not reread on later backups."
-                                TextWrapping="Wrap" />
-                            <CheckBox Content="Staging Folders (1 archive per mod)" IsChecked="{Binding IncludeStaging, Mode=TwoWay}" />
-                            <CheckBox Content="Game Configs (Diff vs Snapshot)" IsChecked="{Binding IncludeGameConfigs, Mode=TwoWay}" />
-                            <CheckBox Content="Vortex AppData (Roaming)" IsChecked="{Binding IncludeVortexAppData, Mode=TwoWay}" />
-                            <CheckBox Content="Custom Folders" IsChecked="{Binding IncludeCustomFolders, Mode=TwoWay}" />
-                        </StackPanel>
-                    </Grid>
-
-                    <ui:Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Center"
-                        Appearance="Primary"
-                        Command="{Binding StartBackupCommand}"
-                        Content="Start Backup Job"
-                        IsEnabled="{Binding CanStartOperation}" />
-                </StackPanel>
-            </ui:Card>
-
-            <ui:Card Padding="20">
-                <StackPanel helpers:StackPanelSpacing.Spacing="12">
-                    <ui:TextBlock FontTypography="Subtitle" Text="Restore from Drive" />
-                    <ui:TextBlock
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="Files that would be overwritten are saved to a Safety Backup before restoring. Keep each game's _archives folder alongside its dated snapshots; snapshots reuse archives from that shared folder."
-                        TextWrapping="Wrap" />
-                    <ui:Button
-                        Command="{Binding BrowseRestoreFolderCommand}"
-                        Content="Browse Backup Directory..."
-                        IsEnabled="{Binding IsIdle}" />
-
-                    <StackPanel helpers:StackPanelSpacing.Spacing="8" Visibility="{Binding HasRestoreManifest, Converter={StaticResource BoolToVisibility}}">
-                        <ui:TextBlock
-                            FontTypography="BodyStrong"
-                            Text="{Binding RestoreSummary}"
-                            TextWrapping="Wrap" />
-                        <ui:TextBlock
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="{Binding RestoreFolderPath}"
-                            TextWrapping="Wrap" />
-
-                        <Grid Visibility="{Binding RestoreHasStaging, Converter={StaticResource BoolToVisibility}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="90" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox
-                                Grid.Column="0"
-                                Content="Staging folders"
-                                IsChecked="{Binding RestoreStaging, Mode=TwoWay}" />
-                            <ComboBox
-                                Grid.Column="1"
-                                Margin="8,0,0,0"
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreStagingDrive, Mode=TwoWay}" />
-                        </Grid>
-
-                        <Grid Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="90" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox
-                                Grid.Column="0"
-                                Content="Game configs"
-                                IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}" />
-                            <ComboBox
-                                Grid.Column="1"
-                                Margin="8,0,0,0"
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}" />
-                        </Grid>
-
-                        <Grid Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="90" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox
-                                Grid.Column="0"
-                                Content="Vortex AppData"
-                                IsChecked="{Binding RestoreAppData, Mode=TwoWay}" />
-                            <ComboBox
-                                Grid.Column="1"
-                                Margin="8,0,0,0"
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreAppDataDrive, Mode=TwoWay}" />
-                        </Grid>
-
-                        <Grid Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="90" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox
-                                Grid.Column="0"
-                                Content="Custom folders"
-                                IsChecked="{Binding RestoreCustomFolders, Mode=TwoWay}" />
-                            <ComboBox
-                                Grid.Column="1"
-                                Margin="8,0,0,0"
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreCustomFoldersDrive, Mode=TwoWay}" />
-                        </Grid>
-
-                        <ui:TextBlock
-                            Margin="0,8,0,0"
-                            FontTypography="BodyStrong"
-                            Text="Will be restored to:" />
-                        <ItemsControl ItemsSource="{Binding RestorePlanLines}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock
-                                        Margin="0,2"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="{Binding}"
-                                        TextWrapping="Wrap" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
+                    <StackPanel Style="{StaticResource ActionBarPanelStyle}">
                         <ui:Button
-                            Margin="0,8,0,0"
                             Appearance="Danger"
                             Command="{Binding RestoreCommand}"
-                            Content="Restore Selected"
+                            Content="Restore selected"
+                            Icon="{ui:SymbolIcon ArrowDownload24}"
                             IsEnabled="{Binding CanStartOperation}" />
                     </StackPanel>
                 </StackPanel>
-            </ui:Card>
-        </StackPanel>
+
+                <TextBlock
+                    Margin="1,16,0,0"
+                    Style="{StaticResource CaptionTextStyle}"
+                    Text="Files that a restore would overwrite are saved to a safety backup first. When moving backups, keep each component's _archives folder next to its dated snapshot folders: snapshots share the archives stored there." />
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
-</Page>
+</Page>
