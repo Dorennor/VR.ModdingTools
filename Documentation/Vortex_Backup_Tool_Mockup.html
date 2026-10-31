@@ -252,10 +252,10 @@
 
         <div id="dashboard" class="tab-content active">
             <h2>Game Profiles</h2>
-            <p class="subtitle">Manage games, staging folders, and custom paths.</p>
+            <p class="subtitle">Illustrative mockup only. Current path tools are per-path drive swap and Find on other disk.</p>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                <button>🔄 Remap Drive Letters</button>
+                <button>🔎 Find on other disk</button>
                 <button class="primary">+ Add New Profile</button>
             </div>
 
@@ -331,12 +331,9 @@
 
             <div class="infobar">
                 <div>
-                    <strong>Paused Job Found:</strong> A previous backup job for "Skyrim" encountered locked files (File
-                    in Use).
+                    <strong>Backup needs to continue:</strong> A previous backup job encountered locked files (File in Use).
                 </div>
-                <button class="primary"
-                    style="background-color: transparent; border: 1px solid #FFCC00; color: #FFCC00;">Resume &
-                    Append</button>
+                <button class="primary">Continue Backup</button>
             </div>
 
             <div class="card">
@@ -344,22 +341,18 @@
                 <div style="display: flex; gap: 40px; margin-bottom: 25px;">
                     <div style="flex: 1;">
                         <h4 style="margin-top: 0;">Target Profiles</h4>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Skyrim Special
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Skyrim Special
                             Edition</label>
                         <label style="margin-bottom: 8px;"><input type="checkbox"> Cyberpunk 2077</label>
                         <label style="margin-bottom: 8px;"><input type="checkbox"> Elder Scrolls Online</label>
                     </div>
                     <div style="flex: 1;">
                         <h4 style="margin-top: 0;">Components to Backup</h4>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Staging Folders (1 archive
-                            per mod)</label>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Game Configs (Diff vs
-                            Snapshot)</label>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Vortex AppData
-                            (Roaming)</label>
-                        <hr style="border-color: var(--border); margin: 10px 0;">
-                        <label style="margin-bottom: 8px;"><input type="checkbox"> Pack as Single Monolithic
-                            Archive</label>
+                        <p style="color: var(--text-muted); font-size: 13px;">Incremental snapshots reuse unchanged mod archives from the game's shared _archives folder.</p>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Staging Folders (per-mod incremental archives)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Game Configs (Diff vs Snapshot)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Vortex AppData (Roaming)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Custom Folders</label>
                     </div>
                 </div>
                 <button class="primary" style="width: 100%;">Start Backup Job</button>
@@ -367,8 +360,7 @@
 
             <div class="card">
                 <div class="card-header"><span class="card-title">Restore from Drive</span></div>
-                <p style="color: var(--text-muted); font-size: 13px;">Auto-Safety backup will run on current configs
-                    before restoring.</p>
+                <p style="color: var(--text-muted); font-size: 13px;">Existing files are safety-backed up before restore. Keep each game's shared _archives folder alongside dated snapshots; the archive store is required to restore them.</p>
                 <button>Browse Backup Directory...</button>
             </div>
         </div>

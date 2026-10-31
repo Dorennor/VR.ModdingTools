@@ -1,107 +1,95 @@
-# Vortex Backup Tool - Detailed Copilot Implementation Context
+# Vortex Backup Tool - Current Implementation and Handoff
 
-## 1. Architecture & App Context
+Updated 2026-10-31. This is the current source of truth for a new Copilot chat. Other files in Documentation contain original rationale, human plans and an illustrative mockup. The user runs the app with Visual Studio F5; do not launch or automate it.
 
-- **Platform:** .NET 8 Desktop Application.
-- **UI Framework:** WPF with `Wpf UI` (lepo.co) for Windows 11 native controls (Mica, NavigationView, Cards).
-- **Architecture:** MVVM using `CommunityToolkit.Mvvm` (Source Generators: `[ObservableProperty]`, `[RelayCommand]`).
-- **Dependency Injection:** `Microsoft.Extensions.DependencyInjection` for resolving ViewModels and Services.
-- **Deployment Strategy:** Single-file portable `.exe`. All app data must be stored locally next to the executable (Self-contained pattern). Do NOT use `%AppData%` for internal app configurations.
+This is a project handoff, not a verbatim transcript. It captures the important decisions and current state so work can continue without rediscovering or reimplementing completed features. The repository code and tests are authoritative if they differ from this document. Start by checking the worktree and the requested issue; do not replace the architecture or redo completed items below. The project is now in the **polish, finish remaining small functionality, and debug/validate** phase—not a fresh implementation or redesign phase. Keep changes surgical, preserve unrelated work, and run the narrowest relevant tests/build.
 
-## 2. File System Structure (Self-Contained)
+## Goal and original plan
 
-The app resides in a single folder and generates the following structure dynamically:
+Create a portable Windows backup tool primarily for Vortex modpacks, but flexible enough for other games and custom mod folders. The original implementation sequence was application shell and DI; Settings and profiles; Vanilla snapshots and safe purge; Backup & Restore with progress, ignore rules and retry; then logging and portable publishing. The legacy proof of concept's main weakness was a monolithic archive, requiring huge archives to be rebuilt for small mod updates. Incremental per-mod snapshots are now implemented.
 
-```text
-VortexBackupTool/
-├── VortexBackupTool.exe
-├── settings.json         (Global settings, paths, dynamic compression mapping rules)
-├── profiles.json         (Game specific profiles, sources, custom paths)
-├── Logs/                 (Application execution logs, text files)
-├── Temp/                 (Working directory, contains active_backup_job.json for resumability)
-├── SafetyBackups/        (Pre-purge / Pre-restore automatic fast backups)
-└── Snapshots/            (Baseline JSON snapshots for game root folders)
-```
+## Implemented
 
-## 3. Core Data Models & Settings (C# Records)
+- .NET 10 WPF, WPF-UI 4.3.0 (NuGet `WPF-UI`), CommunityToolkit.Mvvm, DI and layered Models/Interfaces/Services/ViewModels/UI.
+- Settings page: backup destination, compression rules, safety-backup retention and global ignore patterns.
+- Dashboard: JSON profiles, editable paths/custom folders, new-profile default `%APPDATA%\Vortex`, per-path drive swap and Find on other disk. No global drive-letter rewrite.
+- Vanilla & Purge: per-profile persisted baseline snapshots, preview, confirmed purge and safety backup before deletion.
+- Backup & Restore: progress/cancel, Continue Backup for locked files, overwrite confirmation, pre-restore safety backup, component selection and legacy version-1/monolithic restore.
+- Incremental snapshots: each run creates a dated manifest under `<backup-root>\<game>\<timestamp>`. Shared immutable archives live in sibling `<backup-root>\<game>\_archives`. Keep `_archives` with all dated snapshot folders when moving/copying. One archive unit per top-level staging mod; loose root files are separate. New/changed units receive new archives; unchanged archives are reused; removed mods are omitted only from new snapshots. The same unit layout applies to configs, Vortex AppData and custom folders.
+- Fingerprints store relative paths, size, creation/last-write times, file attributes, directory inventory/attributes, and SHA-256 per file. Hashes are calculated during the normal archive read. Unchanged metadata reuses stored hashes and archives without rereading file contents. When metadata changes, the file is read and hashed during archive creation; identical content hashes discard the temporary archive and reuse the prior archive. A stable 30 GB file is not reread on every run. Edits preserving all compared metadata cannot be detected without rereading; the user chose to avoid rereading unchanged large files.
+- Locked-file snapshots remain incomplete and unavailable for restore until Continue Backup succeeds. Job state records failed files and pending archive/manifest publication.
+- UI defaults: no profile selected, staging and Vortex AppData selected, game configs and custom folders unselected. New backups do not offer monolithic packaging. Existing version-1 and monolithic snapshots remain restorable. The first run after old manifests rearchives units without saved hashes.
+- Last checked 2026-10-31: solution build succeeded; 131 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
 
-### 3.1 Global Settings
+## Settled decisions — do not reopen without asking
 
-```csharp
-public record AppSettings(
-    string GoogleDriveBackupPath,
-    int SafetyBackupRetentionDays = 14, // Default retention for auto-backups
-    List<CompressionRule> CompressionRules
-);
+- Backups are **dated snapshots with shared per-game immutable archives**, not one ever-growing mutable “latest” archive and not a full re-archive of every mod on each run. Preserving old snapshots and making one-mod updates fast is a core requirement.
+- Keep shared `_archives` when moving/copying a game's snapshots. Do not add archive cleanup/retention that can break any still-retained snapshot; garbage collection needs a safe reference-aware design.
+- Avoid rereading unchanged large files on every backup. The chosen policy is metadata-first comparison and SHA-256 during reads already needed for archive creation; when relevant metadata changes, hash while creating a candidate archive and reuse the prior archive if content hashes match. Do not silently claim byte-for-byte detection for edits that preserve all compared metadata.
+- On new profiles, default Vortex AppData to `%APPDATA%\Vortex`, but keep it editable. Do not select profiles by default in Backup & Restore. Default selected components are staging and Vortex AppData only; game configs and custom folders are opt-in.
+- Drive/path detection is per path. There is no global drive-letter remap; preserve the per-path drive swap and Find on other disk proposal flow.
+- A locked-file backup must offer **Continue Backup**. Continue retries recorded failed files and completes pending archives/manifests; do not replace it with a warning-only experience or silently discard job state.
+- Preserve restore compatibility with older version-1 and monolithic backups, even though the current UI creates incremental snapshots.
+- User performs visual validation by running the app with F5. Do not start the UI, modify the user's game data, or automate their F5 session.
 
-// Dynamic Compression Mapping Rules
-public record CompressionRule(
-    long MaxSizeBytes, // e.g., 50 * 1024 * 1024 (50 MB)
-    System.IO.Compression.CompressionLevel Level // Optimal, Fastest, or NoCompression
-);
-```
+## Architecture and source map
 
-### 3.2 Profile Definition
+The solution is layered; keep logic in the existing layer and follow its interfaces/DI patterns. Project names/namespaces are singular in places—check actual project references rather than “cleaning them up.”
 
-```csharp
-public record BackupProfile(
-    Guid Id,
-    string GameName,
-    string? VortexStagingPath, // Used for standard Vortex mods (e.g., D:\Vortex Mods\skyrimse)
-    string? GameRootPath,      // Used for Vanilla Snapshots & custom config extraction (e.g., C:\Games\Skyrim)
-    string? VortexAppDataPath, // %AppData%\Vortex specific to this game
-    List<string> CustomFolders, // e.g., Documents\Elder Scrolls Online\Addons
-    bool UseIgnoreList
-);
-```
+- `UniversalBackupTool.Models` (`net10.0`): domain/data types, including `Models/Backups/*`, profiles, settings, snapshots and `AppStoragePaths`.
+- `UniversalBackupTool.Interfaces` (`net10.0`): service contracts, references Models.
+- `UniversalBackupTool.Services` (`net10.0`): service implementations, references Interfaces and Models. The active backup implementation is under `Services/Backups`.
+- `UniversalBackupTool.ViewModels` (`net10.0`): CommunityToolkit.Mvvm ViewModels; references Interfaces.
+- `UniversalBackupTool.UI` (`net10.0-windows`, WPF): views, navigation, dialogs and DI composition in `App.xaml.cs`; references Interfaces, Services and ViewModels. Uses WPF-UI 4.3.0 and Microsoft.Extensions.DependencyInjection 10.0.14.
+- `UniversalBackupTool.Tests` (`net10.0`, NUnit 5): service-level tests; references Interfaces, Models and Services, **not ViewModels**. Ask before adding a ViewModels reference or expanding test architecture.
 
-### 3.3 Snapshot Data Structures
+Key implementation files:
 
-```csharp
-public record FileMetadata(string RelativePath, long SizeBytes, DateTime LastWriteTime, bool IsSymlink);
-public record SnapshotData(string ProfileId, Dictionary<string, FileMetadata> Files); // Dictionary ensures O(1) diff lookups
-```
+- `UniversalBackupTool.Services/Services/Backups/BackupJobRunner.cs`: current `IBackupJobRunner`; snapshot construction/reuse, fingerprints, cancellation and retry/pending publication.
+- `UniversalBackupTool.Services/Services/Backups/ArchiveService.cs`: ZIP streaming, compression rules, failure tracking and SHA-256 calculation during archive reads.
+- `UniversalBackupTool.Services/Services/Backups/RestoreService.cs`: archive/manifest resolution, legacy formats, restore safety archive and extraction path validation.
+- `UniversalBackupTool.Services/Services/Jobs/BackupJobStateService.cs`: persisted active job state.
+- `UniversalBackupTool.Services/Services/FileSystem/FileSystemProvider.cs`: file enumeration and current symlink behavior.
+- `UniversalBackupTool.Services/Services/Snapshots/SnapshotService.cs` and `JsonSnapshotStore.cs`: vanilla baseline/diff persistence.
+- `UniversalBackupTool.Services/Services/Profiles/JsonProfileStore.cs`, `Services/Settings/JsonSettingsStore.cs`, `Services/Paths/PathDriveService.cs`: profile/settings persistence and per-path drive discovery.
+- `UniversalBackupTool.ViewModels/ViewModels/BackupRestore/BackupRestoreViewModel.cs`: backup/restore UI behavior and defaults; `Dashboard/DashboardViewModel.cs`, `VanillaPurge/VanillaPurgeViewModel.cs`, and `Settings/SettingsViewModel.cs` cover other pages.
+- `UniversalBackupTool.UI/Views/*.xaml`: actual UI. The HTML in Documentation is illustrative only.
+- `UniversalBackupTool.Tests/BackupRestoreTests.cs`: incremental backup/restore/continue and path-safety coverage; `ServiceTests.cs`, `ProfileStoreTests.cs`, `SnapshotStoreTests.cs`, and `PathDriveServiceTests.cs` cover related service behavior.
 
-## 4. Key Services & Logic Requirements
+There are older duplicate-looking `UniversalBackupTool.Services/Implementations/*` and `UniversalBackupTool.Services/Interfaces/*` files plus `IBackupEngine`/`BackupEngine`. The UI is wired to `IBackupJobRunner`/`BackupJobRunner`. Do not delete or migrate legacy code without checking references and tests; legacy restore compatibility is intentional.
 
-### 4.1 IFileSystemProvider
+## Remaining work / recommended order
 
-- Must properly handle `FileAttributes.ReparsePoint` (Symlinks) via `.NET 6+ File.ResolveLinkTarget`.
-- When backing up a Symlink, the engine must resolve the target and archive the _actual file bytes_, not the shortcut.
+1. Symlink/reparse point correctness is a functional gap: file enumeration skips symlink files; backup does not resolve them to target bytes. Validate directory symlink traversal, implement safely, and test.
+2. User-run F5 validation: first backup; unchanged second run writes zero mod files; one-mod update; metadata touch with equal hash; mod removal; old/new restore; locked files and resume after app restart; ignore patterns; large files; binding errors.
+3. Structured logging to `Logs/`, including rotation/retention and explicit error reporting.
+4. Configure and verify self-contained single-file portable publishing for .NET 10.
+5. ViewModel tests; ask before adding a ViewModels project reference to Tests.
+6. Consider safe garbage collection for unreferenced archives without breaking old snapshots.
+7. Optional: benchmark and verify Google Drive sync locations and non-NTFS filesystems.
 
-### 4.2 ISnapshotService
+## Implemented versus not yet proven
 
-- `CreateSnapshotAsync`: Reads directory, builds `Dictionary<string, FileMetadata>`.
-- `GetDiffAsync`: Compares current state vs Baseline Snapshot.
-- `PurgeUnregisteredFilesAsync`: Deletes anything in the Root folder not present in the baseline snapshot.
-- **CRITICAL REQUIREMENT:** Must call `ISafetyBackupService.CreateSafetyBackupAsync` BEFORE performing destructive deletion.
+**Implemented and covered by service tests:** per-mod incremental reuse; changed/removed mod snapshots; metadata-change/content-same hash reuse; restore from shared archives; legacy restore; locked-file retry at the service/job level; ZIP traversal rejection; profile/settings/snapshot storage; vanilla diff and purge safety backup. The last reported automated test run was 131 passing NUnit tests on 2026-10-31.
 
-### 4.3 IBackupEngine & Resumability (File in Use)
+**Not established by those unit tests:** a real app crash followed by process restart and successful resume; actual locked files under Vortex/antivirus load; real modpack-scale performance and disk-space behavior; WPF binding/visual correctness in all pages; self-contained portable publish; correctness for symlinks/reparse points; or safe shared-archive cleanup. Treat these as manual/integration validation or open work, not as already verified.
 
-- Uses `System.IO.Compression.ZipArchive`.
-- **Dynamic Compression:** For each file, evaluates `file.Length` against `AppSettings.CompressionRules` to set `CompressionLevel` (e.g., files > 500MB get `NoCompression` for speed).
-- **Resumability Logic:**
-  - If a file throws `IOException` (locked by AV or game), log the failed path to `Temp/active_backup_job.json`.
-  - Continue zipping the rest of the files. Do NOT crash.
-  - On the next application start (or retry button click), read `active_backup_job.json` and open the existing `.zip` using `ZipArchiveMode.Update` to append ONLY the missing files.
+**Current code-confirmed symlink limitation:** `FileSystemProvider.EnumerateFilesAsync` uses recursive enumeration then excludes files for which `IsSymlink` reports a reparse point. `IsSymlink` currently checks `File.Exists`, catches exceptions and returns false; `ResolveActualPath` exists but is not wired into backup enumeration/archive input. Directory links and junction behavior still need explicit testing. Any fix must avoid recursive traversal loops, escaping the selected source, duplicating targets, and accidentally archiving link metadata instead of target bytes.
 
-### 4.3.1 Incremental Mod Snapshots
+## Constraints and implementation notes
 
-- Each backup run creates a separate timestamped snapshot manifest; older snapshots remain restorable.
-- Staging is split into one archive unit per top-level mod folder. Archives live once in the game's shared `_archives/` directory, and snapshot manifests reference them. Keep `_archives/` alongside the dated snapshot directories when moving/copying backups. Unchanged mods reuse their previous archive; changed/new mods get a new immutable archive. Removed mods are omitted only from the new snapshot, not deleted from older snapshots.
-- Change detection stores each mod's relative file paths, file sizes, creation/write timestamps, file attributes, directory inventory and directory attributes (directory timestamps are recorded for diagnostics but do not trigger file-content reads), plus a SHA-256 digest for each file.
-- New archives are written to temporary files. A manifest is committed as complete only after all referenced archives are ready. If files are locked, the incomplete manifest is not offered for restore; Continue Backup retries the missing entries and then completes the manifest.
-- Manifest version 1 and monolithic backups remain supported by restore. New UI backups use per-component archives; monolithic packaging is not offered because it defeats per-mod archive reuse.
+- App data is rooted beside the executable via `AppStoragePaths`: settings.json, profiles.json, Logs, Temp/active_backup_job.json, SafetyBackups and Snapshots. Single-file publishing is not yet verified. `%APPDATA%\Vortex` is external Vortex source data, not app storage.
+- Use local time (`DateTime.Now`) for user-facing timestamps.
+- Do not change namespaces, project files or folder structure unless asked. Preserve unrelated work and existing line endings.
+- Every WPF page needs `ScrollViewer.CanContentScroll="False"` and its own `<ScrollViewer VerticalScrollBarVisibility="Auto">` for page-wide wheel scrolling.
+- Avoid `ui:Button` in DataTemplates; a previous `PressedForeground` binding error was resolved with plain WPF `Button`. Use `helpers:StackPanelSpacing.Spacing`, not a nonexistent `ui:StackPanel`.
+- `BackupJobStateService.SaveAsync` uses `AppContext.BaseDirectory\Temp\active_backup_job.json`; test actual crash/restart resume.
+- Legacy `IBackupEngine`/`BackupEngine` remains beside newer `IBackupJobRunner`/`BackupJobRunner`; UI uses the latter. Check references before removing old code.
+- Purge deletes files, not empty directories. Safety archives run before purge/restore overwrites.
+- For a future code task, first inspect the exact code path and its existing tests, then implement the requested polish/fix; do not use this handoff as a reason to perform a broad audit or unrelated refactor.
 
-### 4.4 ISafetyBackupService
+## Other Documentation files
 
-- Automatically creates fast (`NoCompression`) zip archives of configs/mods before destructive actions (Purge or Restore).
-- Archives are saved to the `SafetyBackups/` folder.
-- Background task cleans up old safety backups older than `AppSettings.SafetyBackupRetentionDays`.
-
-## 5. ViewModels Mapping (MVVM)
-
-- **DashboardVM:** Manage `BackupProfiles`, bind UI to `CustomFolders` lists. Implement "Remap Drive Letters" command (bulk string replace D:\ to E:\ across all profiles).
-- **SettingsVM:** Bind to `AppSettings`. Must include a DataGrid/List to visually edit `CompressionRules` (Size Limit input + ComboBox for CompressionLevel).
-- **VanillaPurgeVM:** Commands for generating baseline snapshots and triggering Purge logic.
-- **BackupRestoreVM:** Execute backups, handle resumable jobs state, display rich async progress bars for large IO operations.
+- `Basic info.txt`: original rationale, updated with current incremental backup, retry behavior and symlink limitation.
+- `Vortex_Backup_Tool_Detailed_Human_Plan.docx`: original human-readable plan, retained as historical design input; this Markdown contains current status.
+- `Vortex_Backup_Tool_Mockup.html`: illustrative UI updated with current defaults and labels; it is not the live UI specification.
