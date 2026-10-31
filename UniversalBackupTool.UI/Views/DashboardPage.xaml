@@ -293,8 +293,8 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Skip files that match the global ignore patterns from Settings."
-                        Header="Use global ignore list"
+                        Description="When backing up and restoring Game configs, skip game-folder files that match the ignore patterns from Settings (for example Vortex deployment manifests). Staging, AppData and custom paths are always backed up completely."
+                        Header="Filter game configs with the ignore list"
                         Icon="{ui:SymbolIcon Filter24}">
                         <ui:ToggleSwitch
                             IsChecked="{Binding EditUseIgnoreList}"
@@ -418,7 +418,7 @@
                                                     <ColumnDefinition Width="150" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Global ignore list" />
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Configs ignore list" />
                                                 <TextBlock Grid.Column="1">
                                                     <TextBlock.Style>
                                                         <Style BasedOn="{StaticResource CaptionTextStyle}" TargetType="TextBlock">

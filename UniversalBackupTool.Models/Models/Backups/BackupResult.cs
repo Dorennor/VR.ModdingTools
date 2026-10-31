@@ -16,5 +16,15 @@ namespace UniversalBackupTool.Model.Models.Backups
         public int ModsRemoved { get; init; }
 
         public List<PendingArchiveMove> PendingArchiveMoves { get; init; } = [];
+
+        /// <summary>
+        /// Files skipped because they match the global ignore list (when the profile uses it).
+        /// </summary>
+        public int IgnoredFiles { get; init; }
+
+        /// <summary>
+        /// A few of the ignored paths (relative to their component root), to show in Output.
+        /// </summary>
+        public List<string> IgnoredExamples { get; init; } = [];
     }
 }

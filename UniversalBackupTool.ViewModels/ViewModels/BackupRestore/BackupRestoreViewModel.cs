@@ -451,6 +451,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             var folder = RestoreFolderPath;
             var summary = RestoreSummary;
             var planLines = RestorePlanLines.ToList();
+            var ignorePatterns = GetRestoreIgnorePatterns(_restoreManifest);
 
             await RunOperationAsync("Restore", async scope =>
             {
@@ -459,7 +460,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 foreach (var line in planLines)
                     ReportInfo("    " + line);
 
-                var result = await Task.Run(() => _restoreService.RestoreAsync(folder, plan, scope, scope.CancellationToken), scope.CancellationToken);
+                var result = await Task.Run(() => _restoreService.RestoreAsync(folder, plan, scope, scope.CancellationToken, ignorePatterns), scope.CancellationToken);
+
+                if (result.IgnoredFiles > 0)
+                    ReportInfo($"Game configs ignore list: {result.IgnoredFiles:N0} file(s) in the backup match the ignore patterns and were not restored.");
 
                 if (result.SafetyBackupPath is not null)
                     ReportInfo($"Files that were replaced were saved to {result.SafetyBackupPath}");
@@ -474,7 +478,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private void ReportBackupResult(BackupBatchResult batch, AppSettings settings)
         {
             foreach (var result in batch.Results)
+            {
                 ReportInfo($"{result.GameName}: {result.FilesArchived:N0} file(s) written, snapshot {result.BackupDirectory}");
+
+                if (result.IgnoredFiles > 0)
+                    ReportInfo($"{result.GameName}: game configs ignore list skipped {result.IgnoredFiles:N0} file(s), e.g. {string.Join(", ", result.IgnoredExamples)}");
+            }
 
             foreach (var warning in batch.Results.SelectMany(result => result.Warnings))
                 ReportWarning(warning);
@@ -483,6 +492,21 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
             if (batch.FailedFiles.Count > 0)
                 ReportFailedFiles(batch.FailedFiles.Select(file => file.SourcePath).ToList(), "file(s) were in use and are missing from the archives. Close the game or Vortex, then select Continue Backup on the Backup & Restore page");
+        }
+
+        /// <summary>
+        /// The global ignore patterns apply to a restore exactly like to a backup: only when the matching profile uses the
+        /// ignore list (a backup without a matching profile uses it too, the default for profiles).
+        /// </summary>
+        private IReadOnlyCollection<string> GetRestoreIgnorePatterns(BackupManifest? manifest)
+        {
+            if (manifest is null || _settings is null)
+                return [];
+
+            var profile = _allProfiles.FirstOrDefault(candidate => candidate.Id == manifest.ProfileId)
+                ?? _allProfiles.FirstOrDefault(candidate => string.Equals(candidate.GameName, manifest.GameName, StringComparison.OrdinalIgnoreCase));
+
+            return profile is { UseIgnoreList: false } ? [] : _settings.GlobalIgnorePatterns;
         }
 
         private void ReportFailedFiles(IReadOnlyList<string> paths, string description)

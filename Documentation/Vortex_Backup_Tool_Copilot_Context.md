@@ -34,6 +34,14 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Links get no safety copy because their data lives elsewhere, except a hardlinked file whose every name is being deleted, which gets one copy.
   - Creating a snapshot warns when the game folder already contains links (mods still deployed).
 - Game configs backup skips linked files (Vortex deployments; their data is in the staging backup) and reports the count.
+- Ignore list = **Game configs filter only** (user decision 2026-10-31; verified end to end in `IgnoreListTests.cs`):
+  - Staging, Vortex AppData and custom paths are always backed up and restored **completely**, Vortex's own files included. The list only filters Game configs, the game-folder diff against the vanilla snapshot: there only real mod leftovers and configs are wanted, not Vortex's files.
+  - Defaults (`AppSettings.VersionedDefaultIgnorePatterns`): `vortex.deployment*.json` (deployment manifests including the `vortex.deployment.<mod type>.json` variants, defaults version 1) and `__folder_managed_by_vortex` (folder markers, defaults version 2).
+  - Existing settings files receive only the defaults newer than their `DefaultsVersion` (in `JsonSettingsStore.LoadAsync`), so a default the user removed is never re-added.
+  - The profile switch "Filter game configs with the ignore list" (`BackupProfile.UseIgnoreList`) controls it. Output reports how many files were skipped, with up to 5 examples.
+  - Restore applies the same patterns to Game configs units only (relative to the game folder), so older backups do not bring Vortex files back. It uses the matching profile's switch, defaulting to on.
+  - Vanilla snapshots and Purge never use the ignore list, so Purge removes Vortex's files like any other unregistered entry.
+  - The first backup after adding a pattern re-archives the configs unit once, because its file list changes.
 - Log files (added 2026-10-31): `FileLogWriter` (`ILogFileWriter`) appends every Output entry to `Logs\log_yyyy-MM-dd.txt`. Logs older than 30 days are deleted on the first write of a session, and logging never throws. Unhandled UI, AppDomain and unobserved task exceptions are logged with full details; UI ones also appear in Output and do not close the app. The Output toolbar has "Open Logs folder"; Clear only empties the panel.
   - Per-file archive log, so slow files can be found and their compression rule adjusted. `ArchiveService` writes through `ILogFileWriter.AppendDetail`, to the log file only (never the Output panel):
     - `Archiving: <path> (<size>, level <level>)` when a file starts;
@@ -81,7 +89,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - `.pending` temp archives are never deleted by retention, so a discarded job's temp files stay until removed manually.
 - Safety backup retention compares UTC file times with UTC now; it previously mixed UTC and local time.
 - Paused job file: `BackupJobStateService` (DI constructor) saves to `AppStoragePaths.ActiveBackupJobFilePath`, the same path the app loads from. It writes via a temporary file and atomic replace; an unreadable job file loads as "no paused job".
-- Last checked 2026-10-31: solution build succeeded; 177 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
+- Last checked 2026-10-31: solution build succeeded; 185 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
 
 ## Settled decisions — do not reopen without asking
 
@@ -103,6 +111,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Game configs skip linked files.
   - Do not use recursive deletes or recursive enumeration through directory links in game folders.
 - Custom paths are folders or single files, without wildcards.
+- The ignore list only filters Game configs. Staging, Vortex AppData and custom paths are backed up and restored completely; do not apply the ignore list to them.
 
 ## Architecture and source map
 
@@ -168,7 +177,7 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
 - log files, portable settings paths;
 - ViewModel behaviour.
 
-The last reported automated test run was 177 passing NUnit tests on 2026-10-31. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
+The last reported automated test run was 185 passing NUnit tests on 2026-10-31. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
 
 **Not established by those unit tests:**
 - the Output panel and cross-page operation behaviour in the real WPF app, including UI-thread marshalling under a real dispatcher;

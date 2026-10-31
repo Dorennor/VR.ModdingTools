@@ -563,19 +563,19 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
-        public async Task Backup_IgnorePatterns_AppliedOnlyWhenProfileUsesIgnoreList()
+        public async Task Backup_Staging_IsNeverFilteredByTheIgnoreList()
         {
+            // The ignore list only applies to Game configs; staging is always backed up completely.
             Write("ModA/a.txt", "A");
             Write("ModA/skip.log", "L");
             var settings = _settings with { GlobalIgnorePatterns = ["*.log"] };
 
-            var withIgnore = await _runner.RunBackupAsync([CreateProfile(true)], StagingOnly(), settings);
-            var withoutIgnore = await _runner.RunBackupAsync([CreateProfile(false)], StagingOnly(), settings);
+            var batch = await _runner.RunBackupAsync([CreateProfile(true)], StagingOnly(), settings);
 
             Assert.Multiple(() =>
             {
-                Assert.That(withIgnore.FilesArchived, Is.EqualTo(1));
-                Assert.That(withoutIgnore.FilesArchived, Is.EqualTo(2));
+                Assert.That(batch.FilesArchived, Is.EqualTo(2));
+                Assert.That(batch.Results.Single().IgnoredFiles, Is.Zero);
             });
         }
 

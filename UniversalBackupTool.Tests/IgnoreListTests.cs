@@ -1,0 +1,300 @@
+using System.IO.Compression;
+
+using UniversalBackupTool.Model.Models.Backups;
+using UniversalBackupTool.Model.Models.Profiles;
+using UniversalBackupTool.Model.Models.Settings;
+using UniversalBackupTool.Service.Services.Backups;
+using UniversalBackupTool.Service.Services.Settings;
+using UniversalBackupTool.Service.Services.Snapshots;
+using UniversalBackupTool.Services;
+
+namespace UniversalBackupTool.Tests
+{
+    /// <summary>
+    /// End-to-end checks of the ignore list with a realistic Vortex layout. The list only filters Game configs (the game
+    /// folder diff): Vortex's own files there (deployment manifests, __folder_managed_by_vortex markers) are not backed up
+    /// or restored. Staging, Vortex AppData and custom paths are always backed up completely, and Purge ignores the list.
+    /// </summary>
+    [TestFixture]
+    public class IgnoreListTests
+    {
+        private string _root = string.Empty;
+        private string _staging = string.Empty;
+        private string _appData = string.Empty;
+        private string _custom = string.Empty;
+        private string _game = string.Empty;
+        private FakeStoragePathsProvider _paths = null!;
+        private BackupJobRunner _runner = null!;
+        private RestoreService _restore = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _root = TestDirectoryFactory.CreateTemporaryDirectory();
+            _staging = Path.Combine(_root, "staging");
+            _appData = Path.Combine(_root, "appdata");
+            _custom = Path.Combine(_root, "custom");
+            _game = Path.Combine(_root, "game");
+            _paths = new FakeStoragePathsProvider(Path.Combine(_root, "app"));
+
+            var fileSystem = new FileSystemProvider();
+            _runner = new BackupJobRunner(
+                new ArchiveService(),
+                fileSystem,
+                new SnapshotService(fileSystem, new FakeSafetyBackupService()),
+                new JsonSnapshotStore(),
+                new IgnorePatternMatcher(),
+                new FakeJobStateService(),
+                _paths);
+            _restore = new RestoreService(new FakeSafetyBackupService());
+
+            // Vortex-like content outside the game folder: all of it must be backed up.
+            Write(_staging, "vortex.deployment.json", "{ staging manifest }");
+            Write(_staging, "__folder_managed_by_vortex", "");
+            Write(_staging, "ModA/plugin.esp", "mod A");
+            Write(_staging, "ModB/Data/textures/a.dds", "texture");
+            Write(_appData, "state.json", "{ vortex state }");
+            Write(_appData, "vortex.deployment.json", "{ manifest }");
+            Write(_custom, "AddOns/addon.lua", "lua");
+            Write(_custom, "AddOns/vortex.deployment.json", "{ manifest }");
+            Write(_game, "game.exe", "vanilla");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_root))
+                Directory.Delete(_root, recursive: true);
+        }
+
+        private static string Write(string root, string relative, string content)
+        {
+            var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+            return path;
+        }
+
+        private BackupProfile CreateProfile(bool useIgnoreList = true) => new()
+        {
+            GameName = "Witcher",
+            VortexStagingPath = _staging,
+            VortexAppDataPath = _appData,
+            GameRootPath = _game,
+            CustomFolders = [Path.Combine(_custom, "AddOns")],
+            UseIgnoreList = useIgnoreList
+        };
+
+        private static readonly BackupOptions AllComponents = new(true, true, true, true);
+
+        private static readonly BackupOptions ConfigsOnly = new(false, true, false, false);
+
+        private AppSettings DefaultSettings() => AppSettings.Default(Path.Combine(_root, "drive"));
+
+        /// <summary>
+        /// Vanilla snapshot, then what a modded game folder gets afterwards: Vortex's files plus real leftovers and configs.
+        /// </summary>
+        private async Task PrepareModdedGameFolderAsync(BackupProfile profile)
+        {
+            var snapshotService = new SnapshotService(new FileSystemProvider(), new FakeSafetyBackupService());
+            var baseline = await snapshotService.CreateSnapshotAsync(profile.Id, _game);
+            await new JsonSnapshotStore().SaveAsync(_paths.GetPaths().SnapshotsDirectory, baseline);
+
+            Write(_game, "Data/vortex.deployment.json", "{ game manifest }");
+            Write(_game, "Data/vortex.deployment.dinput.json", "{ per-type manifest }");
+            Write(_game, "backup/Launcher/cs/__folder_managed_by_vortex", "");
+            Write(_game, "user.ini", "config");
+            Write(_game, "SKSE/Plugins/plugin.ini", "generated by a mod at runtime");
+        }
+
+        /// <summary>
+        /// Every "component/relative path" stored in the archives of the given backup results.
+        /// </summary>
+        private async Task<List<string>> ArchivedPathsAsync(BackupBatchResult batch)
+        {
+            var paths = new List<string>();
+
+            foreach (var result in batch.Results)
+            {
+                var manifest = (await _restore.ReadManifestAsync(result.BackupDirectory))!;
+
+                foreach (var unit in manifest.Units)
+                {
+                    using var zip = ZipFile.OpenRead(Path.Combine(result.BackupDirectory, unit.ArchiveRootRelativePath, unit.ArchiveFile));
+                    var prefix = unit.RelativeDestination.Length > 0 ? unit.RelativeDestination + "/" : string.Empty;
+                    paths.AddRange(zip.Entries.Select(entry => $"{unit.Component}/{prefix}{entry.FullName}"));
+                }
+            }
+
+            return paths;
+        }
+
+        [Test]
+        public void DefaultPatterns_MatchVortexFilesOnly()
+        {
+            var filter = new IgnorePatternMatcher().Create(DefaultSettings().GlobalIgnorePatterns);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(DefaultSettings().GlobalIgnorePatterns, Is.EqualTo(new[] { "vortex.deployment*.json", "__folder_managed_by_vortex" }));
+                Assert.That(filter.IsIgnored("vortex.deployment.json"), Is.True);
+                Assert.That(filter.IsIgnored("Data/vortex.deployment.json"), Is.True);
+                Assert.That(filter.IsIgnored("Data/vortex.deployment.dinput.json"), Is.True);
+                Assert.That(filter.IsIgnored("VORTEX.DEPLOYMENT.JSON"), Is.True, "Windows paths are case-insensitive");
+                Assert.That(filter.IsIgnored("backup/Launcher/cs/__folder_managed_by_vortex"), Is.True);
+                Assert.That(filter.IsIgnored("myvortex.deployment.json"), Is.False);
+                Assert.That(filter.IsIgnored("vortex.deployment.json.bak"), Is.False);
+                Assert.That(filter.IsIgnored("user.ini"), Is.False);
+                Assert.That(filter.IsIgnored("SKSE/Plugins/plugin.ini"), Is.False);
+            });
+        }
+
+        [Test]
+        public async Task SettingsWithoutDefaults_GetAllDefaultPatternsOnce()
+        {
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await File.WriteAllTextAsync(settingsPath, """{ "GoogleDriveBackupPath": "D:\\Backups", "GlobalIgnorePatterns": [ "*.log" ] }""");
+            var store = new JsonSettingsStore();
+
+            var migrated = await store.LoadAsync(settingsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(migrated.GlobalIgnorePatterns, Is.EqualTo(new[] { "*.log", "vortex.deployment*.json", "__folder_managed_by_vortex" }));
+                Assert.That(migrated.DefaultsVersion, Is.EqualTo(AppSettings.CurrentDefaultsVersion));
+            });
+
+            // The user deletes a default in Settings; it must not come back.
+            await store.SaveAsync(settingsPath, migrated with { GlobalIgnorePatterns = ["*.log", "__folder_managed_by_vortex"] });
+            var reloaded = await store.LoadAsync(settingsPath);
+
+            Assert.That(reloaded.GlobalIgnorePatterns, Is.EqualTo(new[] { "*.log", "__folder_managed_by_vortex" }));
+        }
+
+        [Test]
+        public async Task SettingsFromDefaultsVersion1_OnlyGetTheNewerPattern()
+        {
+            // Version 1 already offered vortex.deployment*.json and the user removed it; only the version 2 pattern is added.
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await File.WriteAllTextAsync(settingsPath, """{ "GoogleDriveBackupPath": "D:\\Backups", "GlobalIgnorePatterns": [ "*.log" ], "DefaultsVersion": 1 }""");
+
+            var migrated = await new JsonSettingsStore().LoadAsync(settingsPath);
+
+            Assert.That(migrated.GlobalIgnorePatterns, Is.EqualTo(new[] { "*.log", "__folder_managed_by_vortex" }));
+        }
+
+        [Test]
+        public async Task Backup_StagingAppDataAndCustomPaths_AreBackedUpCompletely()
+        {
+            var batch = await _runner.RunBackupAsync([CreateProfile()], new BackupOptions(true, false, true, true), DefaultSettings());
+            var archived = await ArchivedPathsAsync(batch);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(archived, Is.SupersetOf(new[]
+                {
+                    "StagingFolders/vortex.deployment.json",
+                    "StagingFolders/__folder_managed_by_vortex",
+                    "StagingFolders/ModA/plugin.esp",
+                    "StagingFolders/ModB/Data/textures/a.dds",
+                    "VortexAppData/state.json",
+                    "VortexAppData/vortex.deployment.json",
+                    "CustomFolders/addon.lua",
+                    "CustomFolders/vortex.deployment.json"
+                }));
+                Assert.That(batch.Results.Sum(result => result.IgnoredFiles), Is.Zero);
+            });
+        }
+
+        [Test]
+        public async Task Backup_GameConfigs_SkipVortexFiles_AndKeepRealLeftoversAndConfigs()
+        {
+            var profile = CreateProfile();
+            await PrepareModdedGameFolderAsync(profile);
+
+            var batch = await _runner.RunBackupAsync([profile], AllComponents, DefaultSettings());
+            var archived = await ArchivedPathsAsync(batch);
+            var configs = archived.Where(path => path.StartsWith("GameConfigs/", StringComparison.Ordinal)).ToList();
+            var configsResult = batch.Results.Single(result => result.IgnoredFiles > 0);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(configs, Is.EquivalentTo(new[] { "GameConfigs/user.ini", "GameConfigs/SKSE/Plugins/plugin.ini" }));
+                Assert.That(configsResult.IgnoredFiles, Is.EqualTo(3));
+                Assert.That(configsResult.IgnoredExamples, Has.Some.EqualTo("Data/vortex.deployment.json"));
+                Assert.That(archived, Does.Contain("StagingFolders/__folder_managed_by_vortex"), "staging keeps Vortex's marker");
+            });
+        }
+
+        [Test]
+        public async Task Backup_GameConfigs_ProfileWithoutIgnoreList_KeepsVortexFiles()
+        {
+            var profile = CreateProfile(useIgnoreList: false);
+            await PrepareModdedGameFolderAsync(profile);
+
+            var batch = await _runner.RunBackupAsync([profile], ConfigsOnly, DefaultSettings());
+            var archived = await ArchivedPathsAsync(batch);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(archived, Does.Contain("GameConfigs/Data/vortex.deployment.json"));
+                Assert.That(archived, Does.Contain("GameConfigs/backup/Launcher/cs/__folder_managed_by_vortex"));
+                Assert.That(batch.Results.Single().IgnoredFiles, Is.Zero);
+            });
+        }
+
+        [Test]
+        public async Task Restore_SkipsIgnoredGameConfigs_ButRestoresOtherComponentsCompletely()
+        {
+            // Backups made without the patterns contain Vortex files in every component.
+            var profile = CreateProfile(useIgnoreList: false);
+            await PrepareModdedGameFolderAsync(profile);
+            var oldSettings = DefaultSettings() with { GlobalIgnorePatterns = [] };
+            var batch = await _runner.RunBackupAsync([profile], new BackupOptions(true, true, false, false), oldSettings);
+
+            Directory.Delete(_staging, recursive: true);
+            Directory.Delete(_game, recursive: true);
+
+            var ignored = 0;
+
+            foreach (var result in batch.Results)
+            {
+                var manifest = (await _restore.ReadManifestAsync(result.BackupDirectory))!;
+                var plan = _restore.BuildPlan(manifest, [profile], [BackupComponent.StagingFolders, BackupComponent.GameConfigs]);
+                var restored = await _restore.RestoreAsync(result.BackupDirectory, plan, ignorePatterns: DefaultSettings().GlobalIgnorePatterns);
+                ignored += restored.IgnoredFiles;
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(ignored, Is.EqualTo(3));
+                Assert.That(File.Exists(Path.Combine(_game, "user.ini")), Is.True);
+                Assert.That(File.Exists(Path.Combine(_game, "SKSE", "Plugins", "plugin.ini")), Is.True);
+                Assert.That(File.Exists(Path.Combine(_game, "Data", "vortex.deployment.json")), Is.False);
+                Assert.That(File.Exists(Path.Combine(_game, "backup", "Launcher", "cs", "__folder_managed_by_vortex")), Is.False);
+                Assert.That(File.Exists(Path.Combine(_staging, "vortex.deployment.json")), Is.True, "staging is restored completely");
+                Assert.That(File.Exists(Path.Combine(_staging, "__folder_managed_by_vortex")), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task Purge_RemovesVortexFiles_RegardlessOfTheIgnoreList()
+        {
+            var profile = CreateProfile();
+            await PrepareModdedGameFolderAsync(profile);
+            var baseline = (await new JsonSnapshotStore().LoadAsync(_paths.GetPaths().SnapshotsDirectory, profile.Id))!.Data;
+
+            var result = await new SnapshotService(new FileSystemProvider(), new FakeSafetyBackupService())
+                .PurgeUnregisteredFilesAsync(_game, baseline);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.Exists(Path.Combine(_game, "Data", "vortex.deployment.json")), Is.False);
+                Assert.That(File.Exists(Path.Combine(_game, "backup", "Launcher", "cs", "__folder_managed_by_vortex")), Is.False);
+                Assert.That(File.Exists(Path.Combine(_game, "user.ini")), Is.False);
+                Assert.That(File.Exists(Path.Combine(_game, "game.exe")), Is.True);
+                Assert.That(result.FilesDeleted, Is.EqualTo(5));
+            });
+        }
+    }
+}

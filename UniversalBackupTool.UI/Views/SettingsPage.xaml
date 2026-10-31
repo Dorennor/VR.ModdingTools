@@ -229,11 +229,11 @@
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Ignore rules" />
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game configs" />
 
                 <controls:SettingsCard
-                    Description="One gitignore-style pattern per line, for example *.log, cache/ or logs/*.txt. Profiles can opt out."
-                    Header="Global ignore patterns"
+                    Description="Game-folder files that are not mod leftovers or configs worth keeping. Used only for Game configs (backup and restore); staging, Vortex AppData and custom paths are always backed up completely, and Purge ignores this list. One gitignore-style pattern per line, for example *.log, CrashDumps/ or logs/*.txt."
+                    Header="Game configs ignore patterns"
                     Icon="{ui:SymbolIcon Filter24}"
                     IsStacked="True">
                     <ui:TextBox

@@ -26,8 +26,11 @@ namespace UniversalBackupTool.Service.Services.Settings
                 return defaultSettings;
             }
 
-            await using var stream = File.OpenRead(filePath);
-            var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
+            AppSettings? settings;
+
+            // Close the file before anything below may save it again (fallback defaults, migration).
+            await using (var stream = File.OpenRead(filePath))
+                settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
 
             if (settings is null)
             {
@@ -39,10 +42,41 @@ namespace UniversalBackupTool.Service.Services.Settings
 
             var baseDirectory = GetBaseDirectory(filePath);
 
-            return settings with
+            settings = settings with
             {
                 GoogleDriveBackupPath = ResolvePortablePath(settings.GoogleDriveBackupPath, baseDirectory),
                 SafetyBackupPath = ResolvePortablePath(settings.SafetyBackupPath, baseDirectory)
+            };
+
+            if (settings.DefaultsVersion < AppSettings.CurrentDefaultsVersion)
+            {
+                settings = AddNewDefaults(settings);
+                await SaveAsync(filePath, settings, cancellationToken);
+            }
+
+            return settings;
+        }
+
+        /// <summary>
+        /// Gives settings files written by older versions the default ignore patterns once, keeping the user's own patterns.
+        /// </summary>
+        private static AppSettings AddNewDefaults(AppSettings settings)
+        {
+            var patterns = settings.GlobalIgnorePatterns.ToList();
+            var newDefaults = AppSettings.VersionedDefaultIgnorePatterns
+                .Where(item => item.SinceVersion > settings.DefaultsVersion)
+                .Select(item => item.Pattern);
+
+            foreach (var pattern in newDefaults)
+            {
+                if (!patterns.Contains(pattern, StringComparer.OrdinalIgnoreCase))
+                    patterns.Add(pattern);
+            }
+
+            return settings with
+            {
+                GlobalIgnorePatterns = patterns,
+                DefaultsVersion = AppSettings.CurrentDefaultsVersion
             };
         }
 

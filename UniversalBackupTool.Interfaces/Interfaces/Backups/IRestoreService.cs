@@ -20,11 +20,15 @@ namespace UniversalBackupTool.Interface.Interfaces.Backups
 
         /// <summary>
         /// Saves the files that would be overwritten into a safety backup, then extracts the plan.
+        /// Game configs entries matching <paramref name="ignorePatterns"/> (relative to the game folder, like at backup time)
+        /// are not restored, so files ignored today are not brought back from older backups. Other components are always
+        /// restored completely.
         /// </summary>
         Task<RestoreResult> RestoreAsync(
             string backupDirectory,
             IReadOnlyList<RestorePlanItem> plan,
             IProgress<BackupProgress>? progress = null,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            IReadOnlyCollection<string>? ignorePatterns = null);
     }
 }

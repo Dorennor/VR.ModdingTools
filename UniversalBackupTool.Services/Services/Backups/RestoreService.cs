@@ -17,10 +17,12 @@ namespace UniversalBackupTool.Service.Services.Backups
         };
 
         private readonly ISafetyBackupService _safetyBackupService;
+        private readonly IIgnorePatternMatcher _ignorePatternMatcher;
 
-        public RestoreService(ISafetyBackupService safetyBackupService)
+        public RestoreService(ISafetyBackupService safetyBackupService, IIgnorePatternMatcher? ignorePatternMatcher = null)
         {
             _safetyBackupService = safetyBackupService ?? throw new ArgumentNullException(nameof(safetyBackupService));
+            _ignorePatternMatcher = ignorePatternMatcher ?? new IgnorePatternMatcher();
         }
 
         public async Task<BackupManifest?> ReadManifestAsync(string backupDirectory, CancellationToken cancellationToken = default)
@@ -80,7 +82,8 @@ namespace UniversalBackupTool.Service.Services.Backups
             string backupDirectory,
             IReadOnlyList<RestorePlanItem> plan,
             IProgress<BackupProgress>? progress = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IReadOnlyCollection<string>? ignorePatterns = null)
         {
             if (string.IsNullOrWhiteSpace(backupDirectory))
                 throw new ArgumentException("Backup directory cannot be empty.", nameof(backupDirectory));
@@ -89,7 +92,8 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             progress?.Report(new BackupProgress("Reading backup", null, 0, 0, 0, 0));
 
-            var items = await Task.Run(() => CollectExtractItems(backupDirectory, plan, cancellationToken), cancellationToken);
+            var filter = _ignorePatternMatcher.Create(ignorePatterns ?? []);
+            var (items, ignored) = await Task.Run(() => CollectExtractItems(backupDirectory, plan, filter, cancellationToken), cancellationToken);
 
             var totalBytes = items.Sum(item => item.Length);
             var safetyBackupPath = await CreateSafetyBackupAsync(items, progress, cancellationToken);
@@ -131,7 +135,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             progress?.Report(new BackupProgress("Restoring", null, totalBytes, totalBytes, items.Count, items.Count));
 
-            return new RestoreResult(restored, safetyBackupPath, failed);
+            return new RestoreResult(restored, safetyBackupPath, failed) { IgnoredFiles = ignored };
         }
 
         private static string? ResolveProfilePath(BackupProfile? profile, BackupManifestUnit unit)
@@ -197,10 +201,15 @@ namespace UniversalBackupTool.Service.Services.Backups
 
         private static string GetLeafName(string path) => Path.GetFileName(path.TrimEnd('\\', '/'));
 
-        private static List<ExtractItem> CollectExtractItems(string backupDirectory, IReadOnlyList<RestorePlanItem> plan, CancellationToken cancellationToken)
+        private static (List<ExtractItem> Items, int Ignored) CollectExtractItems(
+            string backupDirectory,
+            IReadOnlyList<RestorePlanItem> plan,
+            IIgnoreFilter filter,
+            CancellationToken cancellationToken)
         {
             var items = new List<ExtractItem>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var ignored = 0;
 
             foreach (var planItem in plan)
             {
@@ -237,12 +246,26 @@ namespace UniversalBackupTool.Service.Services.Backups
                     if (!destinationFile.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"Archive entry points outside of the destination folder: {entry.FullName}");
 
-                    if (seen.Add(archivePath + "|" + entry.FullName))
-                        items.Add(new ExtractItem(archivePath, entry.FullName, destinationFile, entry.Length));
+                    if (!seen.Add(archivePath + "|" + entry.FullName))
+                        continue;
+
+                    // Like the backup, the ignore list only filters Game configs, matched relative to the game folder.
+                    // Staging, Vortex AppData and custom paths are always restored completely.
+                    var componentRelative = string.IsNullOrEmpty(planItem.Unit.RelativeDestination)
+                        ? entry.FullName[prefix.Length..]
+                        : planItem.Unit.RelativeDestination.TrimEnd('/') + "/" + entry.FullName[prefix.Length..];
+
+                    if (planItem.Unit.Component == BackupComponent.GameConfigs && filter.IsIgnored(componentRelative))
+                    {
+                        ignored++;
+                        continue;
+                    }
+
+                    items.Add(new ExtractItem(archivePath, entry.FullName, destinationFile, entry.Length));
                 }
             }
 
-            return items;
+            return (items, ignored);
         }
 
         private async Task<string?> CreateSafetyBackupAsync(IReadOnlyList<ExtractItem> items, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)

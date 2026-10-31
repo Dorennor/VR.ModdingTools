@@ -299,7 +299,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             CancellationToken cancellationToken)
         {
             var warnings = new List<string>();
-            var filter = _ignorePatternMatcher.Create(profile.UseIgnoreList ? settings.GlobalIgnorePatterns : []);
+            var filter = new CountingIgnoreFilter(_ignorePatternMatcher.Create(profile.UseIgnoreList ? settings.GlobalIgnorePatterns : []));
 
             progress?.Report(new BackupProgress($"{progressLabel}: scanning files", null, 0, 0, 0, 0));
             var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, cancellationToken);
@@ -472,7 +472,9 @@ namespace UniversalBackupTool.Service.Services.Backups
                     ModsArchived = modsArchived,
                     ModsReused = modsReused,
                     ModsRemoved = removedMods,
-                    PendingArchiveMoves = pendingMoves
+                    PendingArchiveMoves = pendingMoves,
+                    IgnoredFiles = filter.IgnoredCount,
+                    IgnoredExamples = filter.Examples.ToList()
                 };
             }
             catch
@@ -559,11 +561,16 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
         }
 
+        /// <summary>
+        /// Staging, Vortex AppData and custom paths are backed up completely. The ignore list only filters Game configs:
+        /// the game folder holds Vortex's own files (deployment manifests, folder markers) next to the real leftovers and
+        /// configs worth keeping.
+        /// </summary>
         private async Task<List<UnitPlan>> CollectUnitsAsync(
             BackupProfile profile,
             BackupOptions options,
             AppSettings settings,
-            IIgnoreFilter filter,
+            IIgnoreFilter configFilter,
             List<string> warnings,
             CancellationToken cancellationToken)
         {
@@ -571,7 +578,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeStaging)
             {
-                var staging = await CollectFolderAsync(profile.VortexStagingPath, "Vortex staging folder", filter, warnings, cancellationToken);
+                var staging = await CollectFolderAsync(profile.VortexStagingPath, "Vortex staging folder", warnings, cancellationToken);
 
                 if (staging is not null && staging.Count > 0)
                 {
@@ -584,7 +591,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
             {
-                var configs = await CollectConfigFilesAsync(profile, filter, warnings, cancellationToken);
+                var configs = await CollectConfigFilesAsync(profile, configFilter, warnings, cancellationToken);
 
                 if (configs is not null && configs.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameConfigs, "configs", "configs.zip", profile.GameRootPath!, configs));
@@ -592,7 +599,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeVortexAppData)
             {
-                var appData = await CollectFolderAsync(profile.VortexAppDataPath, "Vortex AppData folder", filter, warnings, cancellationToken);
+                var appData = await CollectFolderAsync(profile.VortexAppDataPath, "Vortex AppData folder", warnings, cancellationToken);
 
                 if (appData is not null && appData.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.VortexAppData, "appdata", "vortex_appdata.zip", profile.VortexAppDataPath!, appData));
@@ -616,12 +623,12 @@ namespace UniversalBackupTool.Service.Services.Backups
                         var fileName = Path.GetFileName(fullPath);
 
                         rootPath = Path.GetDirectoryName(fullPath)!;
-                        files = filter.IsIgnored(fileName) ? [] : [new SourceFile(fullPath, fileName)];
+                        files = [new SourceFile(fullPath, fileName)];
                     }
                     else if (Directory.Exists(customPath))
                     {
                         rootPath = customPath;
-                        files = await CollectFolderAsync(customPath, "Custom folder", filter, warnings, cancellationToken);
+                        files = await CollectFolderAsync(customPath, "Custom folder", warnings, cancellationToken);
                     }
                     else
                     {
@@ -644,10 +651,12 @@ namespace UniversalBackupTool.Service.Services.Backups
             return units;
         }
 
+        /// <summary>
+        /// Every file of the folder; the ignore list does not apply here (see <see cref="CollectUnitsAsync"/>).
+        /// </summary>
         private async Task<List<SourceFile>?> CollectFolderAsync(
             string? rootPath,
             string label,
-            IIgnoreFilter filter,
             List<string> warnings,
             CancellationToken cancellationToken)
         {
@@ -666,7 +675,6 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             return scan.Files
                 .Select(file => new SourceFile(file.FullPath, file.RelativePath))
-                .Where(file => !filter.IsIgnored(file.RelativePath))
                 .ToList();
         }
 
@@ -1348,6 +1356,33 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         private sealed record SourceFile(string FullPath, string RelativePath);
+
+        /// <summary>
+        /// Counts what the ignore list skips, so each backup can report it (with a few examples) in Output.
+        /// </summary>
+        private sealed class CountingIgnoreFilter(IIgnoreFilter inner) : IIgnoreFilter
+        {
+            private const int MaxExamples = 5;
+
+            private readonly List<string> _examples = [];
+
+            public int IgnoredCount { get; private set; }
+
+            public IReadOnlyList<string> Examples => _examples;
+
+            public bool IsIgnored(string relativePath)
+            {
+                if (!inner.IsIgnored(relativePath))
+                    return false;
+
+                IgnoredCount++;
+
+                if (_examples.Count < MaxExamples)
+                    _examples.Add(relativePath);
+
+                return true;
+            }
+        }
 
         private sealed record LocatedManifest(string Directory, BackupManifest Manifest);
 
