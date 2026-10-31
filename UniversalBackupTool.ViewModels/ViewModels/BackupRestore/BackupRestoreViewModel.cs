@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
+using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Storage;
@@ -27,6 +28,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private readonly IRestoreService _restoreService;
         private readonly IFolderPickerService _folderPickerService;
         private readonly IConfirmationService _confirmationService;
+        private readonly IPathDriveService _pathDriveService;
 
         private AppSettings? _settings;
         private List<BackupProfile> _allProfiles = [];
@@ -41,7 +43,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             IBackupJobStateService backupJobStateService,
             IRestoreService restoreService,
             IFolderPickerService folderPickerService,
-            IConfirmationService confirmationService)
+            IConfirmationService confirmationService,
+            IPathDriveService pathDriveService)
         {
             _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -51,17 +54,33 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             _restoreService = restoreService ?? throw new ArgumentNullException(nameof(restoreService));
             _folderPickerService = folderPickerService ?? throw new ArgumentNullException(nameof(folderPickerService));
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
+            _pathDriveService = pathDriveService ?? throw new ArgumentNullException(nameof(pathDriveService));
 
             PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(IsBusy))
                     OnPropertyChanged(nameof(IsIdle));
+
+                if (e.PropertyName is nameof(RestoreStagingDrive)
+                    or nameof(RestoreGameConfigsDrive)
+                    or nameof(RestoreAppDataDrive)
+                    or nameof(RestoreCustomFoldersDrive))
+                {
+                    RefreshRestorePlan();
+                }
             };
         }
 
         public ObservableCollection<BackupTargetItemViewModel> Targets { get; } = [];
 
         public ObservableCollection<string> RestorePlanLines { get; } = [];
+
+        public IReadOnlyList<string> AvailableDrives { get; } = DriveInfo.GetDrives()
+            .Where(drive => drive.IsReady)
+            .Select(drive => drive.Name[..2])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(drive => drive, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         public bool IsIdle => !IsBusy;
 
@@ -144,6 +163,38 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         [ObservableProperty]
         private bool _restoreCustomFolders = true;
 
+        private string? _restoreStagingDrive;
+
+        public string? RestoreStagingDrive
+        {
+            get => _restoreStagingDrive;
+            set => SetProperty(ref _restoreStagingDrive, value);
+        }
+
+        private string? _restoreGameConfigsDrive;
+
+        public string? RestoreGameConfigsDrive
+        {
+            get => _restoreGameConfigsDrive;
+            set => SetProperty(ref _restoreGameConfigsDrive, value);
+        }
+
+        private string? _restoreAppDataDrive;
+
+        public string? RestoreAppDataDrive
+        {
+            get => _restoreAppDataDrive;
+            set => SetProperty(ref _restoreAppDataDrive, value);
+        }
+
+        private string? _restoreCustomFoldersDrive;
+
+        public string? RestoreCustomFoldersDrive
+        {
+            get => _restoreCustomFoldersDrive;
+            set => SetProperty(ref _restoreCustomFoldersDrive, value);
+        }
+
         partial void OnRestoreStagingChanged(bool value) => RefreshRestorePlan();
 
         partial void OnRestoreGameConfigsChanged(bool value) => RefreshRestorePlan();
@@ -151,6 +202,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         partial void OnRestoreAppDataChanged(bool value) => RefreshRestorePlan();
 
         partial void OnRestoreCustomFoldersChanged(bool value) => RefreshRestorePlan();
+
 
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
@@ -288,6 +340,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     RestoreHasCustomFolders = manifest.Units.Any(unit => unit.Component == BackupComponent.CustomFolders);
 
                     RestoreSummary = $"{manifest.GameName}, created {manifest.CreatedAt:g}{(manifest.IsMonolithic ? ", single archive" : string.Empty)}";
+                    ApplyRestoreDriveDefaults();
 
                     RefreshRestorePlan();
                 });
@@ -404,7 +457,57 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             if (RestoreHasCustomFolders && RestoreCustomFolders)
                 components.Add(BackupComponent.CustomFolders);
 
-            return _restoreService.BuildPlan(_restoreManifest, _allProfiles, components).ToList();
+            var adjustedProfiles = ApplyRestoreDriveOverrides(_allProfiles);
+            return _restoreService.BuildPlan(_restoreManifest, adjustedProfiles, components).ToList();
+        }
+
+        private void ApplyRestoreDriveDefaults()
+        {
+            if (_restoreManifest is null)
+                return;
+
+            var defaultPlan = _restoreService.BuildPlan(_restoreManifest, _allProfiles, [
+                BackupComponent.StagingFolders,
+                BackupComponent.GameConfigs,
+                BackupComponent.VortexAppData,
+                BackupComponent.CustomFolders]).ToList();
+
+            RestoreStagingDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.StagingFolders) is { } staging
+                ? _pathDriveService.GetDrive(staging.RootPath)
+                : null;
+            RestoreGameConfigsDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.GameConfigs) is { } configs
+                ? _pathDriveService.GetDrive(configs.RootPath)
+                : null;
+            RestoreAppDataDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.VortexAppData) is { } appData
+                ? _pathDriveService.GetDrive(appData.RootPath)
+                : null;
+            RestoreCustomFoldersDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.CustomFolders) is { } custom
+                ? _pathDriveService.GetDrive(custom.RootPath)
+                : null;
+        }
+
+        private IReadOnlyList<BackupProfile> ApplyRestoreDriveOverrides(IReadOnlyList<BackupProfile> profiles)
+        {
+            return profiles.Select(profile => profile with
+            {
+                VortexStagingPath = ReplaceDriveIfRequested(profile.VortexStagingPath, RestoreStagingDrive),
+                GameRootPath = ReplaceDriveIfRequested(profile.GameRootPath, RestoreGameConfigsDrive),
+                VortexAppDataPath = ReplaceDriveIfRequested(profile.VortexAppDataPath, RestoreAppDataDrive),
+                CustomFolders = profile.CustomFolders.Select(path => ReplaceDriveIfRequested(path, RestoreCustomFoldersDrive)).ToList()
+            }).ToList();
+        }
+
+        private string? ReplaceDriveIfRequested(string? path, string? selectedDrive)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(selectedDrive))
+                return path;
+
+            var currentDrive = _pathDriveService.GetDrive(path);
+
+            if (currentDrive is null || string.Equals(currentDrive, selectedDrive, StringComparison.OrdinalIgnoreCase))
+                return path;
+
+            return _pathDriveService.ReplaceDrive(path, selectedDrive);
         }
 
         private void RefreshRestorePlan()

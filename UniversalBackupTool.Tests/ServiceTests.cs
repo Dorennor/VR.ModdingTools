@@ -3,6 +3,7 @@ using System.IO.Compression;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.FileSystem;
 using UniversalBackupTool.Interfaces.Storage;
+using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Settings;
 using UniversalBackupTool.Model.Models.Snapshots;
@@ -201,6 +202,8 @@ namespace UniversalBackupTool.Tests
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(fakeSafetyBackup.CallCount, Is.EqualTo(1));
+                Assert.That(fakeSafetyBackup.LastCategory, Is.EqualTo("Purge"));
+                Assert.That(fakeSafetyBackup.LastFiles.Select(file => file.EntryName), Is.EqualTo(new[] { "remove.txt" }));
                 Assert.That(File.Exists(removeFile), Is.False);
                 Assert.That(File.Exists(keepFile), Is.True);
             }
@@ -512,6 +515,35 @@ namespace UniversalBackupTool.Tests
             {
                 Assert.That(File.Exists(archivePath), Is.True);
                 Assert.That(archivePath.StartsWith(customSafetyPath, StringComparison.OrdinalIgnoreCase), Is.True);
+                Assert.That(archivePath.Contains($"{Path.DirectorySeparatorChar}General{Path.DirectorySeparatorChar}"), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task CreateSafetyBackupAsync_WhenSafetyPathEqualsBackupRoot_UsesSafetyBackupsSubfolder()
+        {
+            var baseDirectory = TestDirectoryFactory.CreateTemporaryDirectory();
+            var source = Path.Combine(baseDirectory, "source");
+            Directory.CreateDirectory(source);
+            await File.WriteAllTextAsync(Path.Combine(source, "file.txt"), "x");
+
+            var backupRoot = Path.Combine(baseDirectory, "Google Drive");
+            var storageProvider = new FakeStoragePathsProvider(Path.Combine(baseDirectory, "app"));
+            var settingsStore = new JsonSettingsStore();
+            var settingsPath = storageProvider.GetPaths().SettingsFilePath;
+            var settings = AppSettings.Default(backupRoot) with { SafetyBackupPath = backupRoot };
+            await settingsStore.SaveAsync(settingsPath, settings);
+
+            var service = new SafetyBackupService(storageProvider, settingsStore);
+            var archivePath = await service.CreateSafetyBackupAsync(source, "configured");
+
+            var expectedRoot = Path.Combine(backupRoot, "SafetyBackups");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.Exists(archivePath), Is.True);
+                Assert.That(archivePath.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase), Is.True);
+                Assert.That(archivePath.Contains($"{Path.DirectorySeparatorChar}General{Path.DirectorySeparatorChar}"), Is.True);
             });
         }
 
@@ -545,7 +577,7 @@ namespace UniversalBackupTool.Tests
             File.SetLastWriteTimeUtc(oldFile, DateTime.Now.AddDays(-20));
             File.SetLastWriteTimeUtc(newFile, DateTime.Now.AddDays(-5));
 
-            var settings = AppSettings.Default(baseDirectory);
+            var settings = AppSettings.Default(baseDirectory) with { SafetyBackupPath = safetyDir };
             var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             await service.CleanupExpiredAsync(settings);
@@ -740,6 +772,10 @@ namespace UniversalBackupTool.Tests
     {
         public int CallCount { get; private set; }
 
+        public List<ArchiveFileItem> LastFiles { get; } = [];
+
+        public string? LastCategory { get; private set; }
+
         public Task<string> CreateSafetyBackupAsync(string sourceRootPath, string? archiveNamePrefix = null, CancellationToken cancellationToken = default)
         {
             CallCount++;
@@ -748,6 +784,20 @@ namespace UniversalBackupTool.Tests
             Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
 
             return Task.FromResult(archivePath);
+        }
+
+        public Task<string?> CreateSafetyBackupAsync(IReadOnlyList<ArchiveFileItem> files, string archiveNamePrefix, string category, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            LastFiles.Clear();
+            LastFiles.AddRange(files);
+            LastCategory = category;
+
+            var first = files.FirstOrDefault()?.SourcePath ?? Path.GetTempPath();
+            var archivePath = Path.Combine(Path.GetDirectoryName(first) ?? Path.GetTempPath(), "safety_backup.zip");
+            Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
+
+            return Task.FromResult<string?>(archivePath);
         }
 
         public Task CleanupExpiredAsync(AppSettings settings, CancellationToken cancellationToken = default)
@@ -1036,7 +1086,7 @@ namespace UniversalBackupTool.Tests
             await File.WriteAllTextAsync(recentFile, "recent");
             File.SetLastWriteTimeUtc(recentFile, DateTime.Now.AddDays(-1));
 
-            var settings = AppSettings.Default(baseDirectory);
+            var settings = AppSettings.Default(baseDirectory) with { SafetyBackupPath = safetyDir };
             var service = new SafetyBackupService(storageProvider, new JsonSettingsStore());
 
             await service.CleanupExpiredAsync(settings);

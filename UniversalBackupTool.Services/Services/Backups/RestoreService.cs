@@ -3,10 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using UniversalBackupTool.Interface.Interfaces.Backups;
-using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Profiles;
-using UniversalBackupTool.Model.Models.Settings;
 
 namespace UniversalBackupTool.Service.Services.Backups
 {
@@ -18,13 +16,11 @@ namespace UniversalBackupTool.Service.Services.Backups
             Converters = { new JsonStringEnumConverter() }
         };
 
-        private readonly IArchiveService _archiveService;
-        private readonly IAppStoragePathsProvider _storagePathsProvider;
+        private readonly ISafetyBackupService _safetyBackupService;
 
-        public RestoreService(IArchiveService archiveService, IAppStoragePathsProvider storagePathsProvider)
+        public RestoreService(ISafetyBackupService safetyBackupService)
         {
-            _archiveService = archiveService ?? throw new ArgumentNullException(nameof(archiveService));
-            _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
+            _safetyBackupService = safetyBackupService ?? throw new ArgumentNullException(nameof(safetyBackupService));
         }
 
         public async Task<BackupManifest?> ReadManifestAsync(string backupDirectory, CancellationToken cancellationToken = default)
@@ -216,37 +212,12 @@ namespace UniversalBackupTool.Service.Services.Backups
                 return null;
 
             progress?.Report(new BackupProgress("Creating safety backup", null, 0, 0, 0, existing.Count));
-
-            var directory = _storagePathsProvider.GetPaths().SafetyBackupsDirectory;
-            var archivePath = Path.Combine(directory, $"pre-restore_{DateTime.Now:yyyyMMdd_HHmmss}.zip");
-
-            // Settings without compression rules store everything uncompressed, which keeps the safety backup fast.
-            var fastSettings = AppSettings.Default(string.Empty) with { CompressionRules = [] };
-            var result = await _archiveService.CreateArchiveAsync(archivePath, existing, fastSettings, null, cancellationToken);
-
-            if (result.Failed.Count > 0)
-            {
-                TryDelete(archivePath);
-                throw new IOException($"The safety backup could not read {result.Failed.Count} file(s) that are in use, for example {result.Failed[0].SourcePath}. Close the game or Vortex and try again. Nothing was restored.");
-            }
-
-            return archivePath;
+            return await _safetyBackupService.CreateSafetyBackupAsync(existing, "pre-restore", "Restore", cancellationToken);
         }
 
         private static string ToSafetyEntryName(string fullPath)
         {
             return fullPath.Replace(":", string.Empty).Replace('\\', '/').TrimStart('/');
-        }
-
-        private static void TryDelete(string path)
-        {
-            try
-            {
-                File.Delete(path);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-            }
         }
 
         private sealed record ExtractItem(string ArchivePath, string EntryName, string DestinationFile, long Length);

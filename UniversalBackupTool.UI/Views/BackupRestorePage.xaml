@@ -179,22 +179,69 @@
                             Text="{Binding RestoreFolderPath}"
                             TextWrapping="Wrap" />
 
-                        <CheckBox
-                            Content="Staging folders"
-                            IsChecked="{Binding RestoreStaging, Mode=TwoWay}"
-                            Visibility="{Binding RestoreHasStaging, Converter={StaticResource BoolToVisibility}}" />
-                        <CheckBox
-                            Content="Game configs"
-                            IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}"
-                            Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}" />
-                        <CheckBox
-                            Content="Vortex AppData"
-                            IsChecked="{Binding RestoreAppData, Mode=TwoWay}"
-                            Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}" />
-                        <CheckBox
-                            Content="Custom folders"
-                            IsChecked="{Binding RestoreCustomFolders, Mode=TwoWay}"
-                            Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}" />
+                        <Grid Visibility="{Binding RestoreHasStaging, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox
+                                Grid.Column="0"
+                                Content="Staging folders"
+                                IsChecked="{Binding RestoreStaging, Mode=TwoWay}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreStagingDrive, Mode=TwoWay}" />
+                        </Grid>
+
+                        <Grid Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox
+                                Grid.Column="0"
+                                Content="Game configs"
+                                IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}" />
+                        </Grid>
+
+                        <Grid Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox
+                                Grid.Column="0"
+                                Content="Vortex AppData"
+                                IsChecked="{Binding RestoreAppData, Mode=TwoWay}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreAppDataDrive, Mode=TwoWay}" />
+                        </Grid>
+
+                        <Grid Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox
+                                Grid.Column="0"
+                                Content="Custom folders"
+                                IsChecked="{Binding RestoreCustomFolders, Mode=TwoWay}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreCustomFoldersDrive, Mode=TwoWay}" />
+                        </Grid>
 
                         <ui:TextBlock
                             Margin="0,8,0,0"

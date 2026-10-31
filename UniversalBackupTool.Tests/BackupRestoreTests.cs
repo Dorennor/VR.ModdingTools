@@ -9,7 +9,9 @@ using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Settings;
 using UniversalBackupTool.Service.Services.Backups;
+using UniversalBackupTool.Service.Services.Settings;
 using UniversalBackupTool.Service.Services.Snapshots;
+using UniversalBackupTool.Services.Backups;
 
 namespace UniversalBackupTool.Tests
 {
@@ -244,7 +246,7 @@ namespace UniversalBackupTool.Tests
                 new IgnorePatternMatcher(),
                 _jobState,
                 paths);
-            _restore = new RestoreService(_archive, paths);
+            _restore = new RestoreService(new SafetyBackupService(paths, new JsonSettingsStore()));
             _settings = AppSettings.Default(_drive);
         }
 

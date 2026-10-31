@@ -1,6 +1,7 @@
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.FileSystem;
 using UniversalBackupTool.Interfaces.Snapshots;
+using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Snapshots;
 
 namespace UniversalBackupTool.Service.Services.Snapshots
@@ -84,18 +85,21 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             if (!Directory.Exists(rootPath))
                 return;
 
-            await _safetyBackupService.CreateSafetyBackupAsync(rootPath, "pre-purge", cancellationToken);
-
             var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
+            var filesToDelete = files
+                .Where(filePath => !baselineSnapshot.Files.ContainsKey(_fileSystemProvider.GetRelativePath(rootPath, filePath)))
+                .ToList();
 
-            foreach (var filePath in files)
+            var safetyBackupFiles = filesToDelete
+                .Select(filePath => new ArchiveFileItem(filePath, _fileSystemProvider.GetRelativePath(rootPath, filePath)))
+                .ToList();
+
+            await _safetyBackupService.CreateSafetyBackupAsync(safetyBackupFiles, "pre-purge", "Purge", cancellationToken);
+
+            foreach (var filePath in filesToDelete)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var relativePath = _fileSystemProvider.GetRelativePath(rootPath, filePath);
-
-                if (!baselineSnapshot.Files.ContainsKey(relativePath))
-                    await _fileSystemProvider.DeleteFileAsync(filePath, cancellationToken);
+                await _fileSystemProvider.DeleteFileAsync(filePath, cancellationToken);
             }
         }
     }
