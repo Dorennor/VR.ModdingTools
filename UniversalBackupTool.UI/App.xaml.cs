@@ -6,6 +6,7 @@ using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.FileSystem;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
+using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interface.Interfaces.Settings;
@@ -13,6 +14,7 @@ using UniversalBackupTool.Interfaces.Snapshots;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Service.Services.Backups;
 using UniversalBackupTool.Service.Services.Jobs;
+using UniversalBackupTool.Service.Services.Operations;
 using UniversalBackupTool.Service.Services.Paths;
 using UniversalBackupTool.Service.Services.Profiles;
 using UniversalBackupTool.Service.Services.Settings;
@@ -67,6 +69,8 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<IProfileStore, JsonProfileStore>();
             services.AddSingleton<ISystemPathsProvider, SystemPathsProvider>();
             services.AddSingleton<IPathDriveService, PathDriveService>();
+            services.AddSingleton<IOperationCoordinator, OperationCoordinator>();
+            services.AddSingleton<IOperationOutputService, OperationOutputService>();
             services.AddSingleton<ISafetyBackupService, SafetyBackupService>();
             services.AddSingleton<ISnapshotService, SnapshotService>();
             services.AddSingleton<ISnapshotStore, JsonSnapshotStore>();
@@ -80,17 +84,17 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<INavigationViewPageProvider, ServiceProviderPageProvider>();
 
             services.AddSingleton<MainViewModel>();
-            services.AddTransient<DashboardViewModel>();
-            services.AddTransient<SettingsViewModel>();
-            services.AddTransient<VanillaPurgeViewModel>();
-            services.AddTransient<BackupRestoreViewModel>();
+            services.AddSingleton<DashboardViewModel>();
+            services.AddSingleton<SettingsViewModel>();
+            services.AddSingleton<VanillaPurgeViewModel>();
+            services.AddSingleton<BackupRestoreViewModel>();
 
             services.AddSingleton<MainWindow>();
 
-            services.AddTransient<DashboardPage>();
-            services.AddTransient<VanillaPurgePage>();
-            services.AddTransient<BackupRestorePage>();
-            services.AddTransient<SettingsPage>();
+            services.AddSingleton<DashboardPage>();
+            services.AddSingleton<VanillaPurgePage>();
+            services.AddSingleton<BackupRestorePage>();
+            services.AddSingleton<SettingsPage>();
         }
     }
-}
+}

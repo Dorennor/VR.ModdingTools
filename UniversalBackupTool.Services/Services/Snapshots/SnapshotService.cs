@@ -77,13 +77,13 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             return Task.FromResult(changes);
         }
 
-        public async Task PurgeUnregisteredFilesAsync(string rootPath, SnapshotData baselineSnapshot, CancellationToken cancellationToken = default)
+        public async Task<PurgeResult> PurgeUnregisteredFilesAsync(string rootPath, SnapshotData baselineSnapshot, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(rootPath))
                 throw new ArgumentException("Root path cannot be empty.", nameof(rootPath));
 
             if (!Directory.Exists(rootPath))
-                return;
+                return new PurgeResult(0, null);
 
             var files = await _fileSystemProvider.EnumerateFilesAsync(rootPath, cancellationToken);
             var filesToDelete = files
@@ -94,13 +94,17 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                 .Select(filePath => new ArchiveFileItem(filePath, _fileSystemProvider.GetRelativePath(rootPath, filePath)))
                 .ToList();
 
-            await _safetyBackupService.CreateSafetyBackupAsync(safetyBackupFiles, "pre-purge", "Purge", cancellationToken);
+            var safetyBackupPath = await _safetyBackupService.CreateSafetyBackupAsync(safetyBackupFiles, "pre-purge", "Purge", cancellationToken);
+            var deleted = 0;
 
             foreach (var filePath in filesToDelete)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await _fileSystemProvider.DeleteFileAsync(filePath, cancellationToken);
+                deleted++;
             }
+
+            return new PurgeResult(deleted, safetyBackupPath);
         }
     }
-}
+}

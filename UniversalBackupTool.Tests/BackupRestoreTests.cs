@@ -390,6 +390,106 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Retention_KeepsPausedSnapshotWithoutUsingASlot_AndResumeStillCompletesIt()
+        {
+            Write("ModA/locked.txt", "L");
+            Write("ModB/b.txt", "B");
+            var lockedPath = Path.Combine(_staging, "ModA", "locked.txt");
+            var profile = CreateProfile();
+            var settings = _settings with { MaxPreservedBackupsPerGame = 1 };
+
+            BackupBatchResult paused;
+            using (new FileStream(lockedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                paused = await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+            }
+
+            var pausedDirectory = paused.Results.Single().BackupDirectory;
+            var pausedJob = _jobState.Saved!;
+            var pausedManifest = await ReadAnyManifestAsync(pausedDirectory);
+            var pausedModB = pausedManifest.Units.Single(unit => unit.RelativeDestination == "ModB");
+            var pausedModBArchive = Path.GetFullPath(Path.Combine(pausedDirectory, pausedModB.ArchiveRootRelativePath, pausedModB.ArchiveFile));
+
+            var second = await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+            var secondDirectory = second.Results.Single().BackupDirectory;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Directory.Exists(pausedDirectory), Is.True, "paused snapshot must not take or lose a retention slot");
+                Assert.That(Directory.Exists(secondDirectory), Is.True);
+            });
+
+            Write("ModB/b.txt", "B2");
+            var third = await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Directory.Exists(pausedDirectory), Is.True);
+                Assert.That(Directory.Exists(secondDirectory), Is.False, "only the newest complete snapshot is kept");
+                Assert.That(Directory.Exists(third.Results.Single().BackupDirectory), Is.True);
+                Assert.That(File.Exists(pausedModBArchive), Is.True, "archives used by the paused snapshot must be kept");
+            });
+
+            var resumed = await _runner.ResumeBackupAsync(pausedJob, settings);
+
+            Assert.Multiple(async () =>
+            {
+                Assert.That(resumed.IsComplete, Is.True);
+                Assert.That(await _restore.ReadManifestAsync(pausedDirectory), Is.Not.Null);
+            });
+        }
+
+        [Test]
+        public async Task Retention_DeletesIncompleteSnapshotOfDiscardedJob()
+        {
+            Write("ModA/locked.txt", "L");
+            var lockedPath = Path.Combine(_staging, "ModA", "locked.txt");
+            var profile = CreateProfile();
+            var settings = _settings with { MaxPreservedBackupsPerGame = 1 };
+
+            BackupBatchResult paused;
+            using (new FileStream(lockedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                paused = await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+            }
+
+            await _jobState.DeleteAsync(string.Empty);
+
+            var complete = await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Directory.Exists(paused.Results.Single().BackupDirectory), Is.False);
+                Assert.That(Directory.Exists(complete.Results.Single().BackupDirectory), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task Retention_LeavesFoldersWithoutManifestUntouched()
+        {
+            Write("ModA/a.txt", "A");
+            var profile = CreateProfile();
+            var settings = _settings with { MaxPreservedBackupsPerGame = 1 };
+            var stray = Path.Combine(_drive, "Test Game", "staging", "user folder");
+            Directory.CreateDirectory(stray);
+            File.WriteAllText(Path.Combine(stray, "notes.txt"), "keep me");
+
+            await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+            Write("ModA/a.txt", "A2");
+            await _runner.RunBackupAsync([profile], StagingOnly(), settings);
+
+            Assert.That(File.Exists(Path.Combine(stray, "notes.txt")), Is.True);
+        }
+
+        private static async Task<BackupManifest> ReadAnyManifestAsync(string directory)
+        {
+            await using var stream = File.OpenRead(Path.Combine(directory, BackupManifest.FileName));
+            var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+            return (await System.Text.Json.JsonSerializer.DeserializeAsync<BackupManifest>(stream, options))!;
+        }
+
+        [Test]
         public async Task Backup_ChangedOneMod_ArchivesOnlyThatMod()
         {
             Write("ModA/a.txt", "A");

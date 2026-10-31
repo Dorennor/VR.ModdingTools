@@ -197,13 +197,14 @@ namespace UniversalBackupTool.Tests
             var fakeSafetyBackup = new FakeSafetyBackupService();
             var snapshotService = new SnapshotService(new FakeFileSystemProvider(), fakeSafetyBackup);
 
-            await snapshotService.PurgeUnregisteredFilesAsync(rootPath, baseline);
+            var result = await snapshotService.PurgeUnregisteredFilesAsync(rootPath, baseline);
 
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(fakeSafetyBackup.CallCount, Is.EqualTo(1));
                 Assert.That(fakeSafetyBackup.LastCategory, Is.EqualTo("Purge"));
                 Assert.That(fakeSafetyBackup.LastFiles.Select(file => file.EntryName), Is.EqualTo(new[] { "remove.txt" }));
+                Assert.That(result.FilesDeleted, Is.EqualTo(1));
                 Assert.That(File.Exists(removeFile), Is.False);
                 Assert.That(File.Exists(keepFile), Is.True);
             }
@@ -1165,4 +1166,4 @@ namespace UniversalBackupTool.Tests
             Assert.That(paths.LogsDirectory.StartsWith(baseDirectory), Is.True);
         }
     }
-}
+}

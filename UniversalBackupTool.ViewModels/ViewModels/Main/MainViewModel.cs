@@ -1,11 +1,17 @@
+using System.Collections.ObjectModel;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 using UniversalBackupTool.Interface.Interfaces.Backups;
+using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
+using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Storage;
+using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Jobs;
+using UniversalBackupTool.Model.Models.Operations;
 using UniversalBackupTool.Model.Models.Settings;
 using UniversalBackupTool.ViewModel.ViewModels.Base;
 
@@ -17,18 +23,34 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         private readonly IAppStoragePathsProvider _storagePathsProvider;
         private readonly ISafetyBackupService _safetyBackupService;
         private readonly IBackupJobStateService _backupJobStateService;
+        private readonly IConfirmationService _confirmationService;
+
+        private bool _closeRequested;
 
         public MainViewModel(
             ISettingsStore settingsStore,
             IAppStoragePathsProvider storagePathsProvider,
             ISafetyBackupService safetyBackupService,
-            IBackupJobStateService backupJobStateService)
+            IBackupJobStateService backupJobStateService,
+            IConfirmationService confirmationService,
+            IOperationCoordinator operationCoordinator,
+            IOperationOutputService operationOutputService)
+            : base(operationOutputService, operationCoordinator)
         {
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
             _safetyBackupService = safetyBackupService ?? throw new ArgumentNullException(nameof(safetyBackupService));
             _backupJobStateService = backupJobStateService ?? throw new ArgumentNullException(nameof(backupJobStateService));
+            _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
+
+            OutputEntries = Output.Entries;
+            Coordinator.StateChanged += (_, _) => UpdateOperationState();
         }
+
+        /// <summary>
+        /// Raised when the window should close, after a running operation finished cancelling.
+        /// </summary>
+        public event EventHandler? CloseRequested;
 
         [ObservableProperty]
         private string _applicationTitle = "Vortex Backup Tool";
@@ -37,15 +59,30 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         private AppSettings? _settings;
 
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(HasPausedJob))]
-        [NotifyPropertyChangedFor(nameof(PausedJobMessage))]
         private ActiveBackupJob? _pausedJob;
 
-        public bool HasPausedJob => PausedJob is not null;
+        [ObservableProperty]
+        private bool _isOperationRunning;
 
-        public string PausedJobMessage => PausedJob is null
-            ? string.Empty
-            : $"A previous backup job ({Path.GetFileName(PausedJob.ArchivePath)}) was not completed. Locked files: {PausedJob.FailedPaths.Count}.";
+        [ObservableProperty]
+        private string? _operationTitle;
+
+        [ObservableProperty]
+        private double _progressPercent;
+
+        [ObservableProperty]
+        private bool _isProgressIndeterminate;
+
+        [ObservableProperty]
+        private string? _progressText;
+
+        [ObservableProperty]
+        private string? _currentItemText;
+
+        [ObservableProperty]
+        private bool _isCancelling;
+
+        public ReadOnlyObservableCollection<OutputEntry> OutputEntries { get; }
 
         [RelayCommand]
         private Task InitializeAsync() => RunBusyAsync(async () =>
@@ -59,6 +96,100 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                                     var job = await _backupJobStateService.LoadAsync(paths.ActiveBackupJobFilePath);
 
                                     PausedJob = job is { IsCompleted: false } ? job : null;
+
+                                    ReportInfo($"Ready. Application data: {paths.BaseDirectory}");
+
+                                    if (PausedJob is not null)
+                                        ReportWarning($"A previous backup is incomplete ({PausedJob.FailedFiles.Count:N0} file(s) were in use). Open Backup & Restore and select Continue Backup.");
                                 });
+
+        [RelayCommand]
+        private void ClearOutput() => Output.Clear();
+
+        [RelayCommand]
+        private void CancelOperation() => Coordinator.CancelCurrent();
+
+        /// <summary>
+        /// Called when the window is closing. Returns true when it may close now. While an operation is running the user is
+        /// asked to cancel it; the window then closes through <see cref="CloseRequested"/> once the operation has stopped.
+        /// </summary>
+        public bool TryPrepareClose()
+        {
+            if (!Coordinator.IsOperationRunning)
+                return true;
+
+            if (_closeRequested)
+                return false;
+
+            var operationName = Coordinator.CurrentOperationName;
+
+            if (!_confirmationService.Confirm(
+                    "Operation in progress",
+                    $"\"{operationName}\" is still running.\n\nCancel it and exit when it has stopped?"))
+            {
+                return false;
+            }
+
+            _closeRequested = true;
+            ReportWarning($"Exit requested: waiting for \"{operationName}\" to stop.");
+            Coordinator.CancelCurrent();
+
+            return false;
+        }
+
+        private void UpdateOperationState()
+        {
+            IsOperationRunning = Coordinator.IsOperationRunning;
+            OperationTitle = Coordinator.CurrentOperationName;
+            IsCancelling = Coordinator.IsCancellationRequested;
+
+            var progress = Coordinator.CurrentProgress;
+
+            if (!IsOperationRunning)
+            {
+                ProgressPercent = 0;
+                IsProgressIndeterminate = false;
+                ProgressText = null;
+                CurrentItemText = null;
+
+                if (_closeRequested)
+                    CloseRequested?.Invoke(this, EventArgs.Empty);
+
+                return;
+            }
+
+            IsProgressIndeterminate = progress is null || (progress.TotalBytes <= 0 && progress.TotalFiles <= 0);
+            ProgressPercent = progress is null ? 0 : progress.Fraction * 100;
+            ProgressText = progress is null ? "Starting..." : FormatProgress(progress);
+            CurrentItemText = progress?.CurrentItem;
+        }
+
+        private static string FormatProgress(BackupProgress progress)
+        {
+            if (progress.TotalBytes <= 0 && progress.TotalFiles <= 0)
+                return progress.Phase;
+
+            var text = $"{progress.Phase}: {progress.FilesProcessed:N0} / {progress.TotalFiles:N0} files";
+
+            if (progress.TotalBytes > 0)
+                text += $" ({FormatBytes(progress.BytesProcessed)} / {FormatBytes(progress.TotalBytes)}, {progress.Fraction:P0})";
+
+            return text;
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            double value = bytes;
+            var unit = 0;
+
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return $"{value:0.#} {units[unit]}";
+        }
     }
 }

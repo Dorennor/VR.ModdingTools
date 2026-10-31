@@ -4,9 +4,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
+using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interfaces.Snapshots;
 using UniversalBackupTool.Interfaces.Storage;
+using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Snapshots;
 using UniversalBackupTool.ViewModel.ViewModels.Base;
 using UniversalBackupTool.ViewModel.ViewModels.Dashboard;
@@ -30,13 +32,25 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             ISnapshotService snapshotService,
             ISnapshotStore snapshotStore,
             IAppStoragePathsProvider storagePathsProvider,
-            IConfirmationService confirmationService)
+            IConfirmationService confirmationService,
+            IOperationCoordinator operationCoordinator,
+            IOperationOutputService operationOutputService)
+            : base(operationOutputService, operationCoordinator)
         {
             _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
             _snapshotService = snapshotService ?? throw new ArgumentNullException(nameof(snapshotService));
             _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
+
+            PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(CanStartOperation) or nameof(HasProfileSelected) or nameof(HasSnapshot))
+                {
+                    OnPropertyChanged(nameof(CanCreateSnapshot));
+                    OnPropertyChanged(nameof(CanPurge));
+                }
+            };
         }
 
         public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
@@ -53,7 +67,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         public bool HasProfileSelected => SelectedProfile is not null;
 
-        public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
+        public bool CanCreateSnapshot => HasProfileSelected && CanStartOperation;
+
+        public bool CanPurge => HasSnapshot && CanStartOperation;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasProfileSelected))]
@@ -67,10 +83,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         [NotifyPropertyChangedFor(nameof(HasPreviewSummary))]
         private string? _previewSummary;
 
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
-        private string? _statusMessage;
-
         public string? GameRootPath => SelectedProfile?.Profile.GameRootPath;
 
         partial void OnSelectedProfileChanged(ProfileItemViewModel? value)
@@ -81,8 +93,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
                 {
-                    StatusMessage = null;
-
                     var previousId = SelectedProfile?.Profile.Id;
                     var profiles = await _profileStore.LoadAsync(_storagePathsProvider.GetPaths().ProfilesFilePath);
 
@@ -97,91 +107,105 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 });
 
         [RelayCommand]
-        private Task CreateSnapshotAsync() => RunBusyAsync(async () =>
+        private async Task CreateSnapshotAsync()
+        {
+            var rootPath = GetValidRootPath();
+
+            if (rootPath is null)
+                return;
+
+            if (_currentSnapshot is not null &&
+                !_confirmationService.Confirm("Update snapshot", "A baseline snapshot already exists for this profile. Replace it with the current state of the game folder?"))
+            {
+                return;
+            }
+
+            var profile = SelectedProfile!.Profile;
+
+            await RunOperationAsync("Create Snapshot", async scope =>
+            {
+                scope.Report(new($"scanning {rootPath}", null, 0, 0, 0, 0));
+
+                var snapshot = await Task.Run(() => _snapshotService.CreateSnapshotAsync(profile.Id, rootPath, scope.CancellationToken), scope.CancellationToken);
+
+                if (snapshot.Files.Count == 0)
                 {
-                    StatusMessage = null;
+                    ReportError($"{profile.GameName}: the game folder contains no files, so no snapshot was saved.");
+                    return;
+                }
 
-                    var rootPath = GetValidRootPath();
+                await _snapshotStore.SaveAsync(_storagePathsProvider.GetPaths().SnapshotsDirectory, snapshot, scope.CancellationToken);
 
-                    if (rootPath is null)
-                        return;
-
-                    if (_currentSnapshot is not null &&
-                        !_confirmationService.Confirm("Update snapshot", "A baseline snapshot already exists for this profile. Replace it with the current state of the game folder?"))
-                    {
-                        return;
-                    }
-
-                    var profileId = SelectedProfile!.Profile.Id;
-                    var snapshot = await Task.Run(() => _snapshotService.CreateSnapshotAsync(profileId, rootPath));
-
-                    if (snapshot.Files.Count == 0)
-                    {
-                        ErrorMessage = "The game folder contains no files, so no snapshot was saved.";
-                        return;
-                    }
-
-                    await _snapshotStore.SaveAsync(_storagePathsProvider.GetPaths().SnapshotsDirectory, snapshot);
-
-                    await LoadSnapshotAsync(profileId);
+                if (SelectedProfile?.Profile.Id == profile.Id)
+                {
+                    await LoadSnapshotAsync(profile.Id);
                     ClearPreview();
+                }
 
-                    StatusMessage = $"Snapshot saved: {snapshot.Files.Count:N0} files.";
-                });
+                ReportSuccess($"{profile.GameName}: baseline snapshot saved, {snapshot.Files.Count:N0} files.");
+            });
+        }
 
         [RelayCommand]
-        private Task PreviewAsync() => RunBusyAsync(async () =>
-                {
-                    StatusMessage = null;
+        private async Task PreviewAsync()
+        {
+            var target = GetPurgeTarget();
 
-                    var unregistered = await FindUnregisteredFilesAsync();
+            if (target is null)
+                return;
 
-                    if (unregistered is null)
-                        return;
-
-                    ShowPreview(unregistered);
-                });
+            await RunOperationAsync("Purge Preview", async scope =>
+            {
+                var unregistered = await FindUnregisteredFilesAsync(target, scope);
+                ShowPreviewIfStillSelected(target, unregistered);
+                ReportInfo($"{target.Profile.GameName}: {unregistered.Count:N0} unregistered file(s) would be deleted from {target.RootPath}.");
+            });
+        }
 
         [RelayCommand]
-        private Task PurgeAsync() => RunBusyAsync(async () =>
+        private async Task PurgeAsync()
+        {
+            var target = GetPurgeTarget();
+
+            if (target is null)
+                return;
+
+            await RunOperationAsync("Purge", async scope =>
+            {
+                var unregistered = await FindUnregisteredFilesAsync(target, scope);
+                ShowPreviewIfStillSelected(target, unregistered);
+
+                if (unregistered.Count == 0)
                 {
-                    StatusMessage = null;
+                    ReportSuccess($"{target.Profile.GameName}: nothing to purge, the game folder matches the baseline snapshot.");
+                    return;
+                }
 
-                    var rootPath = GetValidRootPath();
+                var confirmed = _confirmationService.Confirm(
+                    "Execute Safe Purge",
+                    $"{unregistered.Count:N0} file(s) not present in the baseline snapshot will be deleted from:\n{target.RootPath}\n\nA Safety Backup is created first. Continue?");
 
-                    if (rootPath is null)
-                        return;
+                if (!confirmed)
+                {
+                    ReportInfo("Purge was not confirmed; nothing was deleted.");
+                    return;
+                }
 
-                    var unregistered = await FindUnregisteredFilesAsync();
+                scope.Report(new("creating safety backup and deleting files", null, 0, 0, 0, unregistered.Count));
 
-                    if (unregistered is null)
-                        return;
+                var result = await Task.Run(() => _snapshotService.PurgeUnregisteredFilesAsync(target.RootPath, target.Snapshot, scope.CancellationToken), scope.CancellationToken);
 
-                    ShowPreview(unregistered);
-
-                    if (unregistered.Count == 0)
-                    {
-                        StatusMessage = "Nothing to purge: the game folder matches the baseline snapshot.";
-                        return;
-                    }
-
-                    var confirmed = _confirmationService.Confirm(
-                        "Execute Safe Purge",
-                        $"{unregistered.Count:N0} file(s) not present in the baseline snapshot will be deleted from:\n{rootPath}\n\nA Safety Backup is created first. Continue?");
-
-                    if (!confirmed)
-                        return;
-
-                    var snapshot = _currentSnapshot!.Data;
-
-                    await Task.Run(() => _snapshotService.PurgeUnregisteredFilesAsync(rootPath, snapshot));
-
+                if (SelectedProfile?.Profile.Id == target.Profile.Id)
                     ClearPreview();
 
-                    StatusMessage = $"Purge completed: {unregistered.Count:N0} file(s) deleted. A Safety Backup was created beforehand.";
-                });
+                if (result.SafetyBackupPath is not null)
+                    ReportInfo($"Deleted files were saved to {result.SafetyBackupPath}");
 
-        private async Task<List<string>?> FindUnregisteredFilesAsync()
+                ReportSuccess($"Purge completed for {target.Profile.GameName}: {result.FilesDeleted:N0} file(s) deleted.");
+            });
+        }
+
+        private PurgeTarget? GetPurgeTarget()
         {
             var rootPath = GetValidRootPath();
 
@@ -190,18 +214,30 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             if (_currentSnapshot is null)
             {
-                ErrorMessage = "Create a baseline snapshot first.";
+                ReportError($"{SelectedProfile!.GameName}: create a baseline snapshot first.");
                 return null;
             }
 
-            var baseline = _currentSnapshot.Data;
-            var changes = await Task.Run(() => _snapshotService.GetChangesAsync(rootPath, baseline));
+            return new PurgeTarget(SelectedProfile!.Profile, rootPath, _currentSnapshot.Data);
+        }
+
+        private async Task<List<string>> FindUnregisteredFilesAsync(PurgeTarget target, IOperationScope scope)
+        {
+            scope.Report(new($"comparing {target.RootPath} with the baseline snapshot", null, 0, 0, 0, 0));
+
+            var changes = await Task.Run(() => _snapshotService.GetChangesAsync(target.RootPath, target.Snapshot, scope.CancellationToken), scope.CancellationToken);
 
             // Changes also contain modified and deleted files, which a purge never touches.
             return changes.Keys
-                .Where(path => !baseline.Files.ContainsKey(path))
+                .Where(path => !target.Snapshot.Files.ContainsKey(path))
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private void ShowPreviewIfStillSelected(PurgeTarget target, List<string> unregistered)
+        {
+            if (SelectedProfile?.Profile.Id == target.Profile.Id)
+                ShowPreview(unregistered);
         }
 
         private string? GetValidRootPath()
@@ -210,13 +246,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             if (SelectedProfile is null || string.IsNullOrWhiteSpace(rootPath))
             {
-                ErrorMessage = "Select a profile with a game root folder.";
+                ReportError("Select a profile with a game root folder.");
                 return null;
             }
 
             if (!Directory.Exists(rootPath))
             {
-                ErrorMessage = $"Game root folder does not exist: {rootPath}";
+                ReportError($"Game root folder does not exist: {rootPath}");
                 return null;
             }
 
@@ -224,7 +260,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             if (string.Equals(fullPath, Path.GetPathRoot(fullPath), StringComparison.OrdinalIgnoreCase))
             {
-                ErrorMessage = "A drive root cannot be used as a game folder.";
+                ReportError("A drive root cannot be used as a game folder.");
                 return null;
             }
 
@@ -257,7 +293,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         private async Task RefreshSelectionAsync()
         {
             ClearPreview();
-            StatusMessage = null;
 
             try
             {
@@ -272,7 +307,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             }
             catch (Exception exception)
             {
-                ErrorMessage = exception.Message;
+                ReportError(exception.Message);
             }
         }
 
@@ -293,5 +328,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             OnPropertyChanged(nameof(HasSnapshot));
         }
+
+        private sealed record PurgeTarget(BackupProfile Profile, string RootPath, SnapshotData Snapshot);
     }
 }

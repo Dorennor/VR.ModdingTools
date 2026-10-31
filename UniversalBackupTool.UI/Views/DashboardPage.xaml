@@ -22,22 +22,6 @@
                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                 Text="Manage games, staging folders, and custom paths." />
 
-            <ui:InfoBar
-                Title="Error"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasError}"
-                Message="{Binding ErrorMessage}"
-                Severity="Error" />
-
-            <ui:InfoBar
-                Title="Done"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasStatusMessage}"
-                Message="{Binding StatusMessage}"
-                Severity="Success" />
-
             <Grid Margin="0,0,0,20">
                 <ui:Button
                     Command="{Binding ToggleFindCommand}"
@@ -338,4 +322,4 @@
             </ItemsControl>
         </StackPanel>
     </ScrollViewer>
-</Page>
+</Page>

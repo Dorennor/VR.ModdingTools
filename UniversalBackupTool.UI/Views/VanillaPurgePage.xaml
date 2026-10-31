@@ -22,22 +22,6 @@
                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                 Text="Generate baseline snapshots and safely clean game directories." />
 
-            <ui:InfoBar
-                Title="Error"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasError}"
-                Message="{Binding ErrorMessage}"
-                Severity="Error" />
-
-            <ui:InfoBar
-                Title="Done"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasStatusMessage}"
-                Message="{Binding StatusMessage}"
-                Severity="Success" />
-
             <ui:TextBlock
                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                 Text="No profile with a game root folder yet. Add one on the Dashboard."
@@ -73,7 +57,7 @@
                             Command="{Binding CreateSnapshotCommand}"
                             Content="Create / Update Snapshot"
                             Icon="{ui:SymbolIcon Camera24}"
-                            IsEnabled="{Binding HasProfileSelected}" />
+                            IsEnabled="{Binding CanCreateSnapshot}" />
                     </StackPanel>
 
                     <Separator Margin="0,12,0,12" />
@@ -92,14 +76,14 @@
                                 Command="{Binding PreviewCommand}"
                                 Content="Preview"
                                 Icon="{ui:SymbolIcon Eye24}"
-                                IsEnabled="{Binding HasSnapshot}" />
+                                IsEnabled="{Binding CanPurge}" />
                             <ui:Button
                                 Margin="12,0,0,0"
                                 Appearance="Danger"
                                 Command="{Binding PurgeCommand}"
                                 Content="Execute Safe Purge"
                                 Icon="{ui:SymbolIcon Warning24}"
-                                IsEnabled="{Binding HasSnapshot}" />
+                                IsEnabled="{Binding CanPurge}" />
                         </StackPanel>
 
                         <ui:TextBlock
@@ -124,4 +108,4 @@
             </ui:Card>
         </StackPanel>
     </ScrollViewer>
-</Page>
+</Page>

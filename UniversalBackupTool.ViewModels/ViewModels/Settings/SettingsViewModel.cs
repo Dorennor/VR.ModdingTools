@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
+using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Settings;
@@ -24,7 +25,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         public SettingsViewModel(
             ISettingsStore settingsStore,
             IAppStoragePathsProvider storagePathsProvider,
-            IFolderPickerService folderPickerService)
+            IFolderPickerService folderPickerService,
+            IOperationCoordinator operationCoordinator,
+            IOperationOutputService operationOutputService)
+            : base(operationOutputService, operationCoordinator)
         {
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
@@ -46,19 +50,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         [ObservableProperty]
         private string _globalIgnorePatternsText = string.Empty;
 
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
-        private string? _statusMessage;
-
-        public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
-
         public ObservableCollection<CompressionRuleViewModel> CompressionRules { get; } = [];
 
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
                                 {
-                                    StatusMessage = null;
-
                                     var paths = _storagePathsProvider.GetPaths();
                                     var settings = await _settingsStore.LoadAsync(paths.SettingsFilePath);
 
@@ -68,13 +64,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         [RelayCommand]
         private Task SaveAsync() => RunBusyAsync(async () =>
                                 {
-                                    StatusMessage = null;
-
                                     var validationError = Validate();
 
                                     if (validationError is not null)
                                     {
-                                        ErrorMessage = validationError;
+                                        ReportError(validationError);
                                         return;
                                     }
 
@@ -97,7 +91,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                                     await _settingsStore.SaveAsync(paths.SettingsFilePath, settings);
 
                                     Apply(settings);
-                                    StatusMessage = "Settings saved.";
+                                    ReportSuccess("Settings saved.");
                                 });
 
         [RelayCommand]
@@ -194,4 +188,4 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                 .ToList();
         }
     }
-}
+}

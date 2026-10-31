@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
+using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interfaces.Storage;
@@ -28,7 +29,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             IPathDriveService pathDriveService,
             ISystemPathsProvider systemPathsProvider,
             IAppStoragePathsProvider storagePathsProvider,
-            IFolderPickerService folderPickerService)
+            IFolderPickerService folderPickerService,
+            IOperationCoordinator operationCoordinator,
+            IOperationOutputService operationOutputService)
+            : base(operationOutputService, operationCoordinator)
         {
             _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
             _pathDriveService = pathDriveService ?? throw new ArgumentNullException(nameof(pathDriveService));
@@ -80,10 +84,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [NotifyPropertyChangedFor(nameof(HasFindMessage))]
         private string? _findMessage;
 
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
-        private string? _statusMessage;
-
         public ObservableCollection<ProfilePathEntry> FindablePaths { get; } = [];
 
         public ObservableCollection<string> FoundCandidates { get; } = [];
@@ -91,8 +91,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         public bool HasFindMessage => !string.IsNullOrEmpty(FindMessage);
 
         public bool HasCandidates => FoundCandidates.Count > 0;
-
-        public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
 
         public string EditorTitle => _editingProfileId is null ? "New Profile" : "Edit Profile";
 
@@ -127,8 +125,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
                 {
-                    StatusMessage = null;
-
                     var profiles = await _profileStore.LoadAsync(ProfilesFilePath);
 
                     ReplaceProfiles(profiles);
@@ -137,8 +133,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private void AddProfile()
         {
-            ResetMessages();
-
             _editingProfileId = null;
             _editingOriginal = null;
 
@@ -160,7 +154,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             if (item is null)
                 return;
 
-            ResetMessages();
 
             var profile = item.Profile;
 
@@ -182,21 +175,18 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private void CancelEdit()
         {
-            ErrorMessage = null;
             IsEditing = false;
         }
 
         [RelayCommand]
         private Task SaveProfileAsync() => RunBusyAsync(async () =>
                 {
-                    StatusMessage = null;
-
                     var customFolders = ParseLines(EditCustomFoldersText);
                     var validationError = ValidateEditor(customFolders);
 
                     if (validationError is not null)
                     {
-                        ErrorMessage = validationError;
+                        ReportError(validationError);
                         return;
                     }
 
@@ -223,7 +213,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     ReplaceProfiles(updated);
 
                     IsEditing = false;
-                    StatusMessage = $"Profile \"{edited.GameName}\" saved.";
+                    ReportSuccess($"Profile \"{edited.GameName}\" saved.");
                 });
 
         [RelayCommand]
@@ -232,7 +222,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     if (item is null)
                         return;
 
-                    StatusMessage = null;
 
                     var updated = Profiles
                         .Select(profileItem => profileItem.Profile)
@@ -246,7 +235,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     if (_editingProfileId == item.Profile.Id)
                         IsEditing = false;
 
-                    StatusMessage = $"Profile \"{item.GameName}\" deleted.";
+                    ReportSuccess($"Profile \"{item.GameName}\" deleted.");
                 });
 
         [RelayCommand]
@@ -275,8 +264,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private void ToggleFind()
         {
-            ResetMessages();
-
             IsFindVisible = !IsFindVisible;
 
             if (!IsFindVisible)
@@ -289,12 +276,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private Task FindOnOtherDisksAsync() => RunBusyAsync(async () =>
                 {
-                    StatusMessage = null;
                     ClearFindResults();
 
                     if (SelectedFindPath is null)
                     {
-                        ErrorMessage = "Select a path to look for.";
+                        ReportError("Select a path to look for.");
                         return;
                     }
 
@@ -315,11 +301,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private Task ApplyCandidateAsync() => RunBusyAsync(async () =>
                 {
-                    StatusMessage = null;
-
                     if (SelectedFindPath is null || string.IsNullOrWhiteSpace(SelectedCandidate))
                     {
-                        ErrorMessage = "Select the found path to save.";
+                        ReportError("Select the found path to save.");
                         return;
                     }
 
@@ -335,7 +319,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     ReplaceProfiles(updated);
 
                     IsFindVisible = false;
-                    StatusMessage = $"Path for \"{entry.GameName}\" ({entry.KindLabel}) changed to {candidate}.";
+                    ReportSuccess($"Path for \"{entry.GameName}\" ({entry.KindLabel}) changed to {candidate}.");
                 });
 
         private static BackupProfile WithPath(BackupProfile profile, ProfilePathEntry entry, string newPath)
@@ -401,15 +385,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             }
             catch (ArgumentException exception)
             {
-                ErrorMessage = exception.Message;
+                ReportError(exception.Message);
                 OnPropertyChanged(propertyName);
             }
-        }
-
-        private void ResetMessages()
-        {
-            StatusMessage = null;
-            ErrorMessage = null;
         }
 
         private void ReplaceProfiles(IEnumerable<BackupProfile> profiles)
@@ -469,4 +447,4 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                 .ToList();
         }
     }
-}
+}

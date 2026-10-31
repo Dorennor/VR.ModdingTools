@@ -22,30 +22,6 @@
                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                 Text="Execute backup jobs or restore state from Google Drive." />
 
-            <ui:InfoBar
-                Title="Error"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasError}"
-                Message="{Binding ErrorMessage}"
-                Severity="Error" />
-
-            <ui:InfoBar
-                Title="Attention"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasWarningMessage}"
-                Message="{Binding WarningMessage}"
-                Severity="Warning" />
-
-            <ui:InfoBar
-                Title="Done"
-                Margin="0,0,0,16"
-                IsClosable="False"
-                IsOpen="{Binding HasStatusMessage}"
-                Message="{Binding StatusMessage}"
-                Severity="Success" />
-
             <ui:Card
                 Margin="0,0,0,20"
                 Padding="16"
@@ -71,34 +47,14 @@
                             Appearance="Primary"
                             Command="{Binding ResumeCommand}"
                             Content="Continue Backup"
-                            IsEnabled="{Binding IsIdle}" />
+                            IsEnabled="{Binding CanStartOperation}" />
                         <Button
                             Margin="8,0,0,0"
                             Command="{Binding DiscardPausedJobCommand}"
                             Content="Discard"
-                            IsEnabled="{Binding IsIdle}" />
+                            IsEnabled="{Binding CanStartOperation}" />
                     </StackPanel>
                 </Grid>
-            </ui:Card>
-
-            <ui:Card
-                Margin="0,0,0,24"
-                Padding="20"
-                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
-                <StackPanel helpers:StackPanelSpacing.Spacing="8">
-                    <ui:TextBlock FontTypography="Subtitle" Text="Progress" />
-                    <ProgressBar
-                        Height="8"
-                        Maximum="100"
-                        Minimum="0"
-                        Value="{Binding ProgressPercent, Mode=OneWay}" />
-                    <ui:TextBlock Text="{Binding ProgressText}" TextWrapping="Wrap" />
-                    <ui:TextBlock
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="{Binding CurrentItemText}"
-                        TextTrimming="CharacterEllipsis" />
-                    <Button Command="{Binding CancelCommand}" Content="Cancel" />
-                </StackPanel>
             </ui:Card>
 
             <ui:Card Margin="0,0,0,24" Padding="20">
@@ -153,7 +109,7 @@
                         Appearance="Primary"
                         Command="{Binding StartBackupCommand}"
                         Content="Start Backup Job"
-                        IsEnabled="{Binding IsIdle}" />
+                        IsEnabled="{Binding CanStartOperation}" />
                 </StackPanel>
             </ui:Card>
 
@@ -264,10 +220,10 @@
                             Appearance="Danger"
                             Command="{Binding RestoreCommand}"
                             Content="Restore Selected"
-                            IsEnabled="{Binding IsIdle}" />
+                            IsEnabled="{Binding CanStartOperation}" />
                     </StackPanel>
                 </StackPanel>
             </ui:Card>
         </StackPanel>
     </ScrollViewer>
-</Page>
+</Page>

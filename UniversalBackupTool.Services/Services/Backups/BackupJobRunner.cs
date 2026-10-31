@@ -773,6 +773,12 @@ namespace UniversalBackupTool.Service.Services.Backups
             return latest;
         }
 
+        /// <summary>
+        /// Keeps the newest <paramref name="maxPreservedBackups"/> complete snapshots of a component folder and deletes older
+        /// ones plus archives no retained manifest references. Incomplete snapshots never use a retention slot: the ones still
+        /// awaiting Continue Backup are kept, abandoned ones (job discarded) are deleted because they cannot be restored.
+        /// Folders without a manifest are never touched; an unreadable manifest keeps its folder and disables archive deletion.
+        /// </summary>
         private async Task CleanupRetainedBackupsAsync(
             string currentBackupDirectory,
             int maxPreservedBackups,
@@ -796,7 +802,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (snapshotDirectories.Count <= maxPreservedBackups)
                 return;
 
+            var pausedSnapshots = await LoadPausedSnapshotDirectoriesAsync(warnings, cancellationToken);
             var manifests = new List<LocatedManifest>();
+            var unreadable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var directory in snapshotDirectories)
             {
@@ -812,30 +820,38 @@ namespace UniversalBackupTool.Service.Services.Backups
                     var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken);
 
                     if (manifest?.Units is null)
+                    {
+                        unreadable.Add(directory);
                         continue;
+                    }
 
                     manifests.Add(new LocatedManifest(directory, manifest));
                 }
                 catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
                 {
-                    warnings.Add($"Backup retention skipped snapshot due to unreadable manifest: {directory}");
+                    unreadable.Add(directory);
                 }
             }
 
-            var ordered = snapshotDirectories
-                .Select(directory =>
-                {
-                    var manifest = manifests.FirstOrDefault(item => string.Equals(item.Directory, directory, StringComparison.OrdinalIgnoreCase));
-                    var created = manifest?.Manifest.CreatedAt.UtcDateTime ?? Directory.GetLastWriteTimeUtc(directory);
-                    return (Directory: directory, Created: created, Manifest: manifest);
-                })
-                .OrderByDescending(item => item.Created)
-                .ToList();
+            foreach (var directory in unreadable)
+                warnings.Add($"Backup retention kept a snapshot with an unreadable manifest and did not remove unused archives: {directory}");
 
-            var retained = ordered.Take(maxPreservedBackups).Select(item => item.Directory).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // A null set means the paused job could not be read, so every incomplete snapshot is treated as paused.
+            bool IsPaused(LocatedManifest item) => pausedSnapshots is null || pausedSnapshots.Contains(NormalizeDirectory(item.Directory));
+
+            var retained = manifests
+                .Where(item => item.Manifest.IsComplete)
+                .OrderByDescending(item => item.Manifest.CreatedAt)
+                .Take(maxPreservedBackups)
+                .Select(item => item.Directory)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             retained.Add(currentBackupDirectory);
 
-            var toDelete = ordered
+            foreach (var item in manifests.Where(item => !item.Manifest.IsComplete && IsPaused(item)))
+                retained.Add(item.Directory);
+
+            var toDelete = manifests
                 .Where(item => !retained.Contains(item.Directory))
                 .Select(item => item.Directory)
                 .ToList();
@@ -845,11 +861,11 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var referencedArchives = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var item in ordered.Where(item => retained.Contains(item.Directory) && item.Manifest is not null))
+            foreach (var item in manifests.Where(item => retained.Contains(item.Directory)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                foreach (var unit in item.Manifest!.Manifest.Units)
+                foreach (var unit in item.Manifest.Units)
                 {
                     try
                     {
@@ -878,7 +894,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var archiveDirectory = Path.Combine(gameDirectory, "_archives");
 
-            if (!Directory.Exists(archiveDirectory))
+            if (unreadable.Count > 0 || !Directory.Exists(archiveDirectory))
                 return;
 
             foreach (var archiveFile in Directory.EnumerateFiles(archiveDirectory, "*.zip", SearchOption.TopDirectoryOnly))
@@ -898,6 +914,41 @@ namespace UniversalBackupTool.Service.Services.Backups
                 }
             }
         }
+
+        /// <summary>
+        /// Snapshot folders whose manifests are waiting for Continue Backup. Returns null when the job state cannot be read.
+        /// </summary>
+        private async Task<HashSet<string>?> LoadPausedSnapshotDirectoriesAsync(List<string> warnings, CancellationToken cancellationToken)
+        {
+            ActiveBackupJob? job;
+
+            try
+            {
+                job = await _backupJobStateService.LoadAsync(_storagePathsProvider.GetPaths().ActiveBackupJobFilePath, cancellationToken);
+            }
+            catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+            {
+                warnings.Add("Backup retention could not read the paused backup job, so incomplete snapshots were kept.");
+                return null;
+            }
+
+            var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (job is null || job.IsCompleted)
+                return directories;
+
+            foreach (var manifestPath in job.PendingManifestPaths)
+            {
+                var directory = Path.GetDirectoryName(manifestPath);
+
+                if (!string.IsNullOrWhiteSpace(directory))
+                    directories.Add(NormalizeDirectory(directory));
+            }
+
+            return directories;
+        }
+
+        private static string NormalizeDirectory(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
         private static string ResolveArchivePath(string manifestDirectory, BackupManifestUnit unit)
         {
