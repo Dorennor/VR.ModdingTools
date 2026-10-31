@@ -2,6 +2,12 @@
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
   </Folder>
+  <Folder Name="/Solution Items/Documentation/">
+    <File Path="Documentation/Basic info.txt" />
+    <File Path="Documentation/Vortex_Backup_Tool_Copilot_Context.md" />
+    <File Path="Documentation/Vortex_Backup_Tool_Detailed_Human_Plan.docx" />
+    <File Path="Documentation/Vortex_Backup_Tool_Mockup.html" />
+  </Folder>
   <Project Path="UniversalBackupTool.Interfaces/UniversalBackupTool.Interface.csproj" Id="d7ca9e49-b77b-4366-a1d3-42399d01e166" />
   <Project Path="UniversalBackupTool.Models/UniversalBackupTool.Model.csproj" Id="254e7ae7-5b63-461a-b1a3-ca706620409b" />
   <Project Path="UniversalBackupTool.Services/UniversalBackupTool.Service.csproj" Id="8ada75b5-8170-4976-b06e-82f06be0696a" />
