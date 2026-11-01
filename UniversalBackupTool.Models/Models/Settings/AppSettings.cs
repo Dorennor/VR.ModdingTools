@@ -22,6 +22,17 @@ namespace UniversalBackupTool.Model.Models.Settings
         public int MaxPreservedBackupsPerGame { get; init; } = MaxPreservedBackupsPerGame < 1 ? 3 : MaxPreservedBackupsPerGame;
 
         /// <summary>
+        /// The Vortex AppData folder, shared by every game Vortex manages and backed up once per backup run. Settings files
+        /// from before defaults version 3 get it from the profiles that had their own AppData path, else the usual folder.
+        /// </summary>
+        public string VortexAppDataPath { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Where Vortex keeps its data unless it was moved: %APPDATA%\Vortex.
+        /// </summary>
+        public static string DefaultVortexAppDataPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vortex");
+
+        /// <summary>
         /// Ignore patterns every installation starts with. The ignore list only filters the Game configs component (the
         /// diff of the game folder against its vanilla snapshot); staging, Vortex AppData and custom paths are always backed
         /// up completely, and Purge never uses the list. Vortex leaves its own files in the game folders it deploys to:
@@ -41,9 +52,16 @@ namespace UniversalBackupTool.Model.Models.Settings
         ];
 
         /// <summary>
-        /// Bumped whenever <see cref="VersionedDefaultIgnorePatterns"/> gains a pattern that existing settings files should receive.
+        /// Bumped whenever existing settings files need an upgrade on load: a new pattern in
+        /// <see cref="VersionedDefaultIgnorePatterns"/> (versions 1 and 2) or the global <see cref="VortexAppDataPath"/>
+        /// that replaced the per-profile AppData paths (version 3).
         /// </summary>
-        public const int CurrentDefaultsVersion = 2;
+        public const int CurrentDefaultsVersion = 3;
+
+        /// <summary>
+        /// The defaults version that introduced <see cref="VortexAppDataPath"/>.
+        /// </summary>
+        public const int GlobalVortexAppDataVersion = 3;
 
         /// <summary>
         /// Which defaults this settings file has already received. Files from before this existed read as 0, so the
@@ -59,6 +77,7 @@ namespace UniversalBackupTool.Model.Models.Settings
             MaxPreservedBackupsPerGame: 3)
         {
             GlobalIgnorePatterns = [.. DefaultIgnorePatterns],
+            VortexAppDataPath = DefaultVortexAppDataPath,
             DefaultsVersion = CurrentDefaultsVersion
         };
 

@@ -14,11 +14,6 @@ namespace UniversalBackupTool.Service.Services.Paths
                 .ToList();
         }
 
-        public string GetDefaultVortexAppDataPath()
-        {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vortex");
-        }
-
         public bool PathExists(string path)
         {
             return Directory.Exists(path) || File.Exists(path);

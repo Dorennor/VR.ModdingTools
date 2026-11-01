@@ -2,6 +2,7 @@ using System.Text.Json;
 
 using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Model.Models.Settings;
+using UniversalBackupTool.Model.Models.Storage;
 
 namespace UniversalBackupTool.Service.Services.Settings
 {
@@ -50,11 +51,70 @@ namespace UniversalBackupTool.Service.Services.Settings
 
             if (settings.DefaultsVersion < AppSettings.CurrentDefaultsVersion)
             {
+                if (settings.DefaultsVersion < AppSettings.GlobalVortexAppDataVersion && string.IsNullOrWhiteSpace(settings.VortexAppDataPath))
+                    settings = settings with { VortexAppDataPath = await FindProfileVortexAppDataPathAsync(baseDirectory, cancellationToken) ?? AppSettings.DefaultVortexAppDataPath };
+
                 settings = AddNewDefaults(settings);
                 await SaveAsync(filePath, settings, cancellationToken);
             }
 
             return settings;
+        }
+
+        /// <summary>
+        /// Before defaults version 3 every Vortex profile in profiles.json (next to settings.json) had its own
+        /// VortexAppDataPath. The first one becomes the global setting; the profiles file itself is left as it is.
+        /// </summary>
+        private static async Task<string?> FindProfileVortexAppDataPathAsync(string baseDirectory, CancellationToken cancellationToken)
+        {
+            var profilesPath = new AppStoragePaths(baseDirectory).ProfilesFilePath;
+
+            if (!File.Exists(profilesPath))
+                return null;
+
+            try
+            {
+                await using var stream = File.OpenRead(profilesPath);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+                if (document.RootElement.ValueKind != JsonValueKind.Array)
+                    return null;
+
+                foreach (var profile in document.RootElement.EnumerateArray())
+                {
+                    if (profile.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    // Profiles saved before the UsesVortex setting existed are Vortex profiles.
+                    var usesVortex = !TryGetProperty(profile, "UsesVortex", out var usesVortexValue) || usesVortexValue.ValueKind != JsonValueKind.False;
+
+                    if (usesVortex
+                        && TryGetProperty(profile, "VortexAppDataPath", out var path)
+                        && path.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(path.GetString()))
+                        return path.GetString()!.Trim();
+                }
+            }
+            catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+            {
+            }
+
+            return null;
+        }
+
+        private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+
+            value = default;
+            return false;
         }
 
         /// <summary>

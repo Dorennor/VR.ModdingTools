@@ -78,6 +78,11 @@ namespace UniversalBackupTool.Service.Services.Backups
             var results = new List<BackupResult>();
             var failedFiles = new List<FailedBackupFile>();
             var batchWarnings = new List<string>();
+            var resultProfiles = new Dictionary<BackupResult, BackupProfile>(ReferenceEqualityComparer.Instance);
+
+            // The Vortex AppData folder is shared by all games: it is backed up once per run, into its own folder, when
+            // at least one selected game is managed by Vortex.
+            var backupSharedAppData = options.IncludeVortexAppData && profiles.Any(profile => profile.UsesVortex);
 
             for (var index = 0; index < profiles.Count; index++)
             {
@@ -91,7 +96,10 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 if (componentList.Count == 0)
                 {
-                    batchWarnings.Add($"\"{profile.GameName}\" was skipped: it is not managed by Vortex, so the staging and Vortex AppData components do not apply to it.");
+                    // Only the shared Vortex AppData was selected: nothing to do per game.
+                    if (!(backupSharedAppData && profile.UsesVortex))
+                        batchWarnings.Add($"\"{profile.GameName}\" was skipped: it is not managed by Vortex, so the staging and Vortex AppData components do not apply to it.");
+
                     continue;
                 }
 
@@ -116,14 +124,52 @@ namespace UniversalBackupTool.Service.Services.Backups
                     var message = skippedComponentWarnings.Count > 0
                         ? string.Join(" ", skippedComponentWarnings)
                         : $"Nothing to back up for \"{profile.GameName}\".";
+
+                    // The shared Vortex AppData backup below still covers this Vortex game, as it did when AppData was
+                    // part of each game's backup.
+                    if (backupSharedAppData && profile.UsesVortex)
+                    {
+                        batchWarnings.Add(message);
+                        continue;
+                    }
+
                     throw new InvalidOperationException(message);
                 }
 
                 if (skippedComponentWarnings.Count > 0)
                     profileResults[0].Warnings.AddRange(skippedComponentWarnings);
 
+                foreach (var result in profileResults)
+                    resultProfiles[result] = profile;
+
                 results.AddRange(profileResults);
                 failedFiles.AddRange(profileResults.SelectMany(result => result.FailedFiles));
+            }
+
+            if (backupSharedAppData)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var sharedProfile = VortexAppDataBackup.CreateProfile();
+
+                try
+                {
+                    var result = await BackupProfileAsync(
+                        sharedProfile,
+                        new BackupOptions(false, false, true, false, options.Monolithic),
+                        settings,
+                        VortexAppDataBackup.DisplayName,
+                        progress,
+                        cancellationToken);
+
+                    resultProfiles[result] = sharedProfile;
+                    results.Add(result);
+                    failedFiles.AddRange(result.FailedFiles);
+                }
+                catch (InvalidOperationException exception) when (exception.Message.StartsWith("Nothing to back up for ", StringComparison.Ordinal))
+                {
+                    batchWarnings.Add(exception.Message);
+                }
             }
 
             if (results.Count == 0)
@@ -132,9 +178,12 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (failedFiles.Count > 0)
             {
                 var firstFailed = results.First(result => result.FailedFiles.Count > 0);
-                var profile = profiles.First(candidate => candidate.GameName == firstFailed.GameName);
+                var profile = resultProfiles[firstFailed];
+                var rootPath = VortexAppDataBackup.IsSharedBackup(profile.Id)
+                    ? settings.VortexAppDataPath
+                    : profile.GameRootPath ?? profile.VortexStagingPath ?? string.Empty;
 
-                var job = ActiveBackupJob.Create(profile.Id, firstFailed.BackupDirectory, profile.GameRootPath ?? profile.VortexStagingPath ?? string.Empty) with
+                var job = ActiveBackupJob.Create(profile.Id, firstFailed.BackupDirectory, rootPath) with
                 {
                     FailedFiles = failedFiles,
                     FailedPaths = failedFiles.Select(file => file.SourcePath).ToList(),
@@ -151,8 +200,8 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         /// <summary>
-        /// One option set per selected component that applies to the profile: staging and Vortex AppData only apply to
-        /// games managed by Vortex.
+        /// One option set per selected per-game component that applies to the profile: staging only applies to games
+        /// managed by Vortex. Vortex AppData is not a per-game component: <see cref="RunBackupAsync"/> backs it up once.
         /// </summary>
         private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options, BackupProfile profile)
         {
@@ -166,9 +215,6 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameChanges)
                 expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameChanges: true));
-
-            if (options.IncludeVortexAppData && profile.UsesVortex)
-                expanded.Add(new BackupOptions(false, false, true, false, options.Monolithic));
 
             if (options.IncludeCustomFolders)
                 expanded.Add(new BackupOptions(false, false, false, true, options.Monolithic));
@@ -333,7 +379,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
 
             var component = units[0].Manifest.Component;
-            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile.GameName, component);
+            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile, component);
             var previousManifest = await LoadLatestCompleteManifestAsync(componentRootDirectory, profile, cancellationToken);
             var previousUnits = previousManifest?.Manifest.Units ?? [];
             var archiveRoot = Path.Combine(componentRootDirectory, "_archives");
@@ -531,7 +577,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
 
             var component = units[0].Manifest.Component;
-            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile.GameName, component);
+            var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile, component);
             var backupDirectory = CreateBackupDirectory(componentRootDirectory);
 
             try
@@ -630,10 +676,16 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeVortexAppData)
             {
-                var appData = await CollectFolderAsync(profile.VortexAppDataPath, "Vortex AppData folder", warnings, cancellationToken);
+                // One folder for all games, set in the settings.
+                var appDataPath = settings.VortexAppDataPath;
+
+                if (string.IsNullOrWhiteSpace(appDataPath))
+                    warnings.Add("The Vortex AppData folder is not set. Set it on the Settings page.");
+
+                var appData = await CollectFolderAsync(appDataPath, "Vortex AppData folder", warnings, cancellationToken);
 
                 if (appData is not null && appData.Count > 0)
-                    units.Add(CreateSingleUnit(options, BackupComponent.VortexAppData, "appdata", "vortex_appdata.zip", profile.VortexAppDataPath!, appData));
+                    units.Add(CreateSingleUnit(options, BackupComponent.VortexAppData, "appdata", "vortex_appdata.zip", appDataPath, appData));
             }
 
             if (options.IncludeCustomFolders)
@@ -1316,10 +1368,15 @@ namespace UniversalBackupTool.Service.Services.Backups
             return candidate;
         }
 
-        private static string GetComponentRootDirectory(string backupRoot, string gameName, BackupComponent component)
+        /// <summary>
+        /// &lt;root&gt;\&lt;game&gt;\&lt;component&gt; for game backups; the shared Vortex AppData backups use
+        /// &lt;root&gt;\#Vortex AppData# directly. Each holds the dated snapshot folders and their _archives.
+        /// </summary>
+        private static string GetComponentRootDirectory(string backupRoot, BackupProfile profile, BackupComponent component)
         {
-            var gameDirectory = Path.Combine(backupRoot, SanitizeFileName(gameName));
-            var componentDirectory = Path.Combine(gameDirectory, GetComponentFolderName(component));
+            var componentDirectory = VortexAppDataBackup.IsSharedBackup(profile.Id)
+                ? Path.Combine(backupRoot, VortexAppDataBackup.FolderName)
+                : Path.Combine(backupRoot, SanitizeFileName(profile.GameName), GetComponentFolderName(component));
             Directory.CreateDirectory(componentDirectory);
 
             return componentDirectory;

@@ -4,7 +4,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
     {
         VortexStaging,
         GameRoot,
-        VortexAppData,
         CustomFolder
     }
 }

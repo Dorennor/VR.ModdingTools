@@ -79,7 +79,6 @@ namespace UniversalBackupTool.Tests
         {
             GameName = "Witcher",
             VortexStagingPath = _staging,
-            VortexAppDataPath = _appData,
             GameRootPath = _game,
             CustomFolders = [Path.Combine(_custom, "AddOns")],
             UseIgnoreList = useIgnoreList
@@ -89,7 +88,7 @@ namespace UniversalBackupTool.Tests
 
         private static readonly BackupOptions ConfigsOnly = new(false, true, false, false);
 
-        private AppSettings DefaultSettings() => AppSettings.Default(Path.Combine(_root, "drive"));
+        private AppSettings DefaultSettings() => AppSettings.Default(Path.Combine(_root, "drive")) with { VortexAppDataPath = _appData };
 
         /// <summary>
         /// Vanilla snapshot, then what a modded game folder gets afterwards: Vortex's files plus real leftovers and configs.

@@ -51,7 +51,8 @@ namespace UniversalBackupTool.Service.Services.Backups
         public IReadOnlyList<RestorePlanItem> BuildPlan(
             BackupManifest manifest,
             IReadOnlyCollection<BackupProfile> profiles,
-            IReadOnlyCollection<BackupComponent> components)
+            IReadOnlyCollection<BackupComponent> components,
+            string? vortexAppDataPath = null)
         {
             ArgumentNullException.ThrowIfNull(manifest);
             ArgumentNullException.ThrowIfNull(profiles);
@@ -64,7 +65,10 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             foreach (var unit in manifest.Units.Where(unit => components.Contains(unit.Component)))
             {
-                var profilePath = ResolveProfilePath(profile, unit);
+                // Vortex AppData is one folder for all games, set in the settings, whichever backup it comes from.
+                var profilePath = unit.Component == BackupComponent.VortexAppData
+                    ? vortexAppDataPath
+                    : ResolveProfilePath(profile, unit);
                 var usesOriginal = string.IsNullOrWhiteSpace(profilePath);
                 var root = usesOriginal ? unit.OriginalRootPath : profilePath!;
 
@@ -147,7 +151,6 @@ namespace UniversalBackupTool.Service.Services.Backups
             {
                 BackupComponent.StagingFolders => profile.VortexStagingPath,
                 BackupComponent.GameConfigs or BackupComponent.GameChanges => profile.GameRootPath,
-                BackupComponent.VortexAppData => profile.VortexAppDataPath,
                 BackupComponent.CustomFolders => ResolveCustomRoot(profile, unit),
                 _ => null
             };

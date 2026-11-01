@@ -12,11 +12,14 @@ namespace UniversalBackupTool.Interface.Interfaces.Backups
 
         /// <summary>
         /// Resolves where each part of the backup will be restored, using the current paths of the matching profile.
+        /// Vortex AppData parts (the shared backups and older per-game ones) go to <paramref name="vortexAppDataPath"/>,
+        /// the folder from the settings, or to the path stored in the backup when it is empty.
         /// </summary>
         IReadOnlyList<RestorePlanItem> BuildPlan(
             BackupManifest manifest,
             IReadOnlyCollection<BackupProfile> profiles,
-            IReadOnlyCollection<BackupComponent> components);
+            IReadOnlyCollection<BackupComponent> components,
+            string? vortexAppDataPath = null);
 
         /// <summary>
         /// Saves the files that would be overwritten into a safety backup, then extracts the plan.

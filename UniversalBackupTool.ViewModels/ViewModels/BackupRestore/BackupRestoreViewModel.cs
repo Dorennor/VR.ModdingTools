@@ -10,6 +10,7 @@ using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interface.Interfaces.Settings;
+using UniversalBackupTool.Interface.Interfaces.Vortex;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Jobs;
@@ -30,6 +31,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private readonly IFolderPickerService _folderPickerService;
         private readonly IConfirmationService _confirmationService;
         private readonly IPathDriveService _pathDriveService;
+        private readonly IVortexProcessService _vortexProcessService;
 
         private const int MaxListedPaths = 20;
 
@@ -47,6 +49,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             IFolderPickerService folderPickerService,
             IConfirmationService confirmationService,
             IPathDriveService pathDriveService,
+            IVortexProcessService vortexProcessService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -60,6 +63,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             _folderPickerService = folderPickerService ?? throw new ArgumentNullException(nameof(folderPickerService));
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
             _pathDriveService = pathDriveService ?? throw new ArgumentNullException(nameof(pathDriveService));
+            _vortexProcessService = vortexProcessService ?? throw new ArgumentNullException(nameof(vortexProcessService));
 
             PropertyChanged += (_, e) =>
             {
@@ -351,6 +355,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 return;
             }
 
+            if (options.IncludeVortexAppData && _vortexProcessService.IsVortexRunning()
+                && !_confirmationService.Confirm(
+                    "Vortex is running",
+                    "Vortex is running. It keeps its database in the AppData folder open and keeps writing to it, so the Vortex AppData backup may be inconsistent or miss locked files. Close Vortex first for a reliable backup.\n\nBack up anyway?"))
+                return;
+
             if (PausedJob is not null)
             {
                 if (!_confirmationService.Confirm("Paused job exists", "A previous backup is incomplete. Starting a new backup discards it (the already created archives stay on disk). Continue?"))
@@ -445,7 +455,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     RestoreHasAppData = manifest.Units.Any(unit => unit.Component == BackupComponent.VortexAppData);
                     RestoreHasCustomFolders = manifest.Units.Any(unit => unit.Component == BackupComponent.CustomFolders);
 
-                    RestoreSummary = $"{manifest.GameName}, created {manifest.CreatedAt:g}{(manifest.IsMonolithic ? ", single archive" : string.Empty)}";
+                    var backupName = VortexAppDataBackup.IsSharedBackup(manifest.ProfileId)
+                        ? $"{VortexAppDataBackup.DisplayName} (all games)"
+                        : manifest.GameName;
+
+                    RestoreSummary = $"{backupName}, created {manifest.CreatedAt:g}{(manifest.IsMonolithic ? ", single archive" : string.Empty)}";
                     ApplyRestoreDriveDefaults();
 
                     RefreshRestorePlan();
@@ -463,11 +477,22 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 return;
             }
 
+            var restoresAppData = plan.Any(item => item.Unit.Component == BackupComponent.VortexAppData);
+
+            if (restoresAppData && _vortexProcessService.IsVortexRunning())
+            {
+                ReportError("Restore: Vortex is running. Close Vortex before restoring the Vortex AppData folder: it keeps its database open and would overwrite the restored data.");
+                return;
+            }
+
             var destinations = string.Join(Environment.NewLine, plan.Select(item => item.RootPath).Distinct(StringComparer.OrdinalIgnoreCase));
+            var appDataNote = restoresAppData
+                ? "\n\nThe Vortex AppData folder is shared by all games: Vortex's mod lists, profiles, load orders and settings of EVERY game return to the state of this backup."
+                : string.Empty;
 
             var confirmed = _confirmationService.Confirm(
                 "Restore backup",
-                $"Files in these locations will be overwritten:\n{destinations}\n\nFiles that would be replaced are saved to a Safety Backup first. Continue?");
+                $"Files in these locations will be overwritten:\n{destinations}{appDataNote}\n\nFiles that would be replaced are saved to a Safety Backup first. Continue?");
 
             if (!confirmed)
                 return;
@@ -603,7 +628,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 components.Add(BackupComponent.CustomFolders);
 
             var adjustedProfiles = ApplyRestoreDriveOverrides(_allProfiles);
-            return _restoreService.BuildPlan(_restoreManifest, adjustedProfiles, components).ToList();
+            var appDataPath = ReplaceDriveIfRequested(_settings?.VortexAppDataPath, RestoreAppDataDrive);
+
+            return _restoreService.BuildPlan(_restoreManifest, adjustedProfiles, components, appDataPath).ToList();
         }
 
         private void ApplyRestoreDriveDefaults()
@@ -616,7 +643,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 BackupComponent.GameConfigs,
                 BackupComponent.GameChanges,
                 BackupComponent.VortexAppData,
-                BackupComponent.CustomFolders]).ToList();
+                BackupComponent.CustomFolders], _settings?.VortexAppDataPath).ToList();
 
             RestoreStagingDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.StagingFolders) is { } staging
                 ? _pathDriveService.GetDrive(staging.RootPath)
@@ -638,7 +665,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             {
                 VortexStagingPath = ReplaceDriveIfRequested(profile.VortexStagingPath, RestoreStagingDrive),
                 GameRootPath = ReplaceDriveIfRequested(profile.GameRootPath, RestoreGameConfigsDrive),
-                VortexAppDataPath = ReplaceDriveIfRequested(profile.VortexAppDataPath, RestoreAppDataDrive),
                 CustomFolders = profile.CustomFolders.Select(path => ReplaceDriveIfRequested(path, RestoreCustomFoldersDrive)).ToList()
             }).ToList();
         }

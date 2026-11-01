@@ -70,7 +70,6 @@ namespace UniversalBackupTool.Tests
             var path = Path.Combine(_tempDirectory, "profiles.json");
             var original = CreateProfile("ESO", null, null, @"C:\Docs\Addons", @"C:\Docs\Other") with
             {
-                VortexAppDataPath = @"C:\AppData\Vortex",
                 UseIgnoreList = false
             };
 
@@ -83,9 +82,44 @@ namespace UniversalBackupTool.Tests
             Assert.That(profile.GameName, Is.EqualTo("ESO"));
             Assert.That(profile.VortexStagingPath, Is.Null);
             Assert.That(profile.GameRootPath, Is.Null);
-            Assert.That(profile.VortexAppDataPath, Is.EqualTo(@"C:\AppData\Vortex"));
             Assert.That(profile.CustomFolders, Is.EqualTo(new[] { @"C:\Docs\Addons", @"C:\Docs\Other" }));
             Assert.That(profile.UseIgnoreList, Is.False);
+        }
+
+        [Test]
+        public async Task Load_ProfilesWithTheOldPerProfileAppDataPath_StillLoad_AndSaveDropsIt()
+        {
+            var store = new JsonProfileStore();
+            var path = Path.Combine(_tempDirectory, "profiles.json");
+
+            // profiles.json as written by the version with a Vortex AppData folder per profile.
+            await File.WriteAllTextAsync(path, """
+                [
+                  {
+                    "Id": "d3e61fbe-494e-4d15-9462-92d6985bb0a2",
+                    "GameName": "Valheim",
+                    "UsesVortex": true,
+                    "VortexStagingPath": "E:\\Vortex Mods\\valheim",
+                    "GameRootPath": "E:\\Games\\Valheim",
+                    "VortexAppDataPath": "C:\\Users\\Test\\AppData\\Roaming\\Vortex",
+                    "CustomFolders": [],
+                    "UseIgnoreList": true,
+                    "CreatedAtUtc": "2026-11-01T03:55:40.2357754+02:00"
+                  }
+                ]
+                """);
+
+            var loaded = await store.LoadAsync(path);
+            await store.SaveAsync(path, loaded);
+            var saved = await File.ReadAllTextAsync(path);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(loaded.Single().Id, Is.EqualTo(Guid.Parse("d3e61fbe-494e-4d15-9462-92d6985bb0a2")));
+                Assert.That(loaded.Single().VortexStagingPath, Is.EqualTo(@"E:\Vortex Mods\valheim"));
+                Assert.That(loaded.Single().GameRootPath, Is.EqualTo(@"E:\Games\Valheim"));
+                Assert.That(saved, Does.Not.Contain("VortexAppDataPath"));
+            });
         }
 
         [Test]

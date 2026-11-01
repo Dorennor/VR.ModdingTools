@@ -7,8 +7,6 @@ namespace UniversalBackupTool.Interface.Interfaces.Paths
         /// </summary>
         IReadOnlyList<string> GetAvailableDrives();
 
-        string GetDefaultVortexAppDataPath();
-
         bool PathExists(string path);
     }
 }

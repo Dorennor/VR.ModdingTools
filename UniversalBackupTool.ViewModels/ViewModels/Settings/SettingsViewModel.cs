@@ -90,6 +90,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         [ObservableProperty]
         private string _safetyBackupPath = string.Empty;
 
+        /// <summary>
+        /// The Vortex AppData folder shared by all games Vortex manages; backed up once per backup run.
+        /// </summary>
+        [ObservableProperty]
+        private string _vortexAppDataPath = string.Empty;
+
         [ObservableProperty]
         private double _maxPreservedBackupsPerGame = 3;
 
@@ -125,6 +131,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                                         Theme = SelectedTheme,
                                         GoogleDriveBackupPath = GoogleDriveBackupPath.Trim(),
                                         SafetyBackupPath = SafetyBackupPath.Trim(),
+                                        VortexAppDataPath = VortexAppDataPath.Trim(),
                                         SafetyBackupRetentionDays = (int)SafetyBackupRetentionDays,
                                         MaxPreservedBackupsPerGame = (int)MaxPreservedBackupsPerGame,
                                         CompressionRules = CompressionRules
@@ -157,6 +164,15 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
 
             if (!string.IsNullOrWhiteSpace(selectedPath))
                 SafetyBackupPath = selectedPath;
+        }
+
+        [RelayCommand]
+        private void BrowseVortexAppDataPath()
+        {
+            var selectedPath = _folderPickerService.PickFolder(VortexAppDataPath);
+
+            if (!string.IsNullOrWhiteSpace(selectedPath))
+                VortexAppDataPath = selectedPath;
         }
 
         [RelayCommand]
@@ -203,6 +219,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
 
             GoogleDriveBackupPath = settings.GoogleDriveBackupPath;
             SafetyBackupPath = settings.SafetyBackupPath;
+            VortexAppDataPath = settings.VortexAppDataPath;
             SafetyBackupRetentionDays = settings.SafetyBackupRetentionDays;
             MaxPreservedBackupsPerGame = settings.MaxPreservedBackupsPerGame;
             GlobalIgnorePatternsText = string.Join(Environment.NewLine, settings.GlobalIgnorePatterns);
@@ -220,6 +237,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
 
             if (string.IsNullOrWhiteSpace(SafetyBackupPath))
                 return "Safety backup path cannot be empty.";
+
+            if (string.IsNullOrWhiteSpace(VortexAppDataPath))
+                return "Vortex AppData folder cannot be empty. The usual folder is " + AppSettings.DefaultVortexAppDataPath + ".";
 
             if (SafetyBackupRetentionDays < 1 || SafetyBackupRetentionDays != Math.Floor(SafetyBackupRetentionDays))
                 return "Safety backup retention must be a whole number of days, at least 1.";

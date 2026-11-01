@@ -247,7 +247,8 @@ namespace UniversalBackupTool.Tests
                 _jobState,
                 paths);
             _restore = new RestoreService(new SafetyBackupService(paths, new JsonSettingsStore()));
-            _settings = AppSettings.Default(_drive);
+            // Never the real %APPDATA%\Vortex of the machine running the tests.
+            _settings = AppSettings.Default(_drive) with { VortexAppDataPath = Path.Combine(_root, "vortex-appdata") };
         }
 
         [TearDown]
@@ -357,13 +358,13 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Backup_MultiComponent_UsesSeparateComponentFoldersAndRetentionPerComponent()
         {
-            var appData = Path.Combine(_root, "appdata");
+            var appData = _settings.VortexAppDataPath;
             Directory.CreateDirectory(appData);
 
             Write("ModA/a.txt", "A1");
             File.WriteAllText(Path.Combine(appData, "state.json"), "S1");
 
-            var profile = CreateProfile() with { VortexAppDataPath = appData };
+            var profile = CreateProfile();
             var options = new BackupOptions(true, false, true, false);
             var settings = _settings with { MaxPreservedBackupsPerGame = 1 };
 
@@ -376,17 +377,154 @@ namespace UniversalBackupTool.Tests
 
             var gameRoot = Path.Combine(_drive, "Test Game");
             var stagingRoot = Path.Combine(gameRoot, "staging");
-            var appDataRoot = Path.Combine(gameRoot, "appdata");
-            var stagingSnapshots = Directory.GetDirectories(stagingRoot).Where(path => !string.Equals(Path.GetFileName(path), "_archives", StringComparison.OrdinalIgnoreCase)).ToList();
-            var appDataSnapshots = Directory.GetDirectories(appDataRoot).Where(path => !string.Equals(Path.GetFileName(path), "_archives", StringComparison.OrdinalIgnoreCase)).ToList();
+            var sharedAppDataRoot = Path.Combine(_drive, VortexAppDataBackup.FolderName);
+            var stagingSnapshots = SnapshotFolders(stagingRoot);
+            var appDataSnapshots = SnapshotFolders(sharedAppDataRoot);
 
             Assert.Multiple(() =>
             {
                 Assert.That(Directory.Exists(stagingRoot), Is.True);
-                Assert.That(Directory.Exists(appDataRoot), Is.True);
+                Assert.That(Directory.Exists(Path.Combine(gameRoot, "appdata")), Is.False, "AppData is no longer backed up per game");
                 Assert.That(stagingSnapshots, Has.Count.EqualTo(1));
-                Assert.That(appDataSnapshots, Has.Count.EqualTo(1));
+                Assert.That(appDataSnapshots, Has.Count.EqualTo(1), "retention also applies to the shared AppData folder");
+                Assert.That(Directory.GetFiles(Path.Combine(sharedAppDataRoot, "_archives")), Has.Length.EqualTo(1), "the archive of the removed snapshot is deleted too");
             });
+        }
+
+        private static List<string> SnapshotFolders(string componentRoot) => Directory.GetDirectories(componentRoot)
+            .Where(path => !string.Equals(Path.GetFileName(path), "_archives", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        [Test]
+        public async Task Backup_VortexAppData_IsBackedUpOncePerRun_IntoTheSharedFolder()
+        {
+            Directory.CreateDirectory(_settings.VortexAppDataPath);
+            File.WriteAllText(Path.Combine(_settings.VortexAppDataPath, "state.json"), "S1");
+            Write("ModA/a.txt", "A");
+
+            var skyrim = CreateProfile() with { GameName = "Skyrim" };
+            var fallout = CreateProfile() with { GameName = "Fallout 4" };
+            var eso = CreateProfile() with { GameName = "ESO", UsesVortex = false, VortexStagingPath = null };
+
+            // Only AppData selected: one shared backup, no per-game folders and no "skipped" warnings for Vortex games.
+            var batch = await _runner.RunBackupAsync([skyrim, fallout, eso], new BackupOptions(false, false, true, false), _settings);
+            var result = batch.Results.Single();
+            var manifest = (await _restore.ReadManifestAsync(result.BackupDirectory))!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Path.GetDirectoryName(result.BackupDirectory), Is.EqualTo(Path.Combine(_drive, VortexAppDataBackup.FolderName)));
+                Assert.That(manifest.ProfileId, Is.EqualTo(VortexAppDataBackup.ProfileId));
+                Assert.That(manifest.Units.Single().Component, Is.EqualTo(BackupComponent.VortexAppData));
+                Assert.That(manifest.Units.Single().OriginalRootPath, Is.EqualTo(_settings.VortexAppDataPath));
+                Assert.That(Directory.Exists(Path.Combine(_drive, "Skyrim")), Is.False);
+                Assert.That(Directory.Exists(Path.Combine(_drive, "Fallout 4")), Is.False);
+                Assert.That(batch.Warnings, Has.Count.EqualTo(1));
+                Assert.That(batch.Warnings.Single(), Does.Contain("\"ESO\" was skipped"));
+            });
+
+            // Staging + AppData for two games: two staging backups and still one AppData backup.
+            var both = await _runner.RunBackupAsync([skyrim, fallout], new BackupOptions(true, false, true, false), _settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(both.Results, Has.Count.EqualTo(3));
+                Assert.That(both.Results.Count(item => item.BackupDirectory.Contains(VortexAppDataBackup.FolderName)), Is.EqualTo(1));
+                Assert.That(SnapshotFolders(Path.Combine(_drive, VortexAppDataBackup.FolderName)), Has.Count.EqualTo(2));
+            });
+        }
+
+        [Test]
+        public async Task Backup_EmptyStaging_WithVortexAppData_WarnsAndStillBacksUpAppData()
+        {
+            Directory.CreateDirectory(_settings.VortexAppDataPath);
+            File.WriteAllText(Path.Combine(_settings.VortexAppDataPath, "state.json"), "S1");
+
+            var batch = await _runner.RunBackupAsync([CreateProfile()], new BackupOptions(true, false, true, false), _settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(batch.Results.Single().BackupDirectory, Does.Contain(VortexAppDataBackup.FolderName));
+                Assert.That(batch.Warnings.Single(), Does.Contain("Nothing to back up for \"Test Game\""));
+            });
+        }
+
+        [Test]
+        public async Task Backup_VortexAppData_NotRun_WhenNoSelectedGameUsesVortex()
+        {
+            Directory.CreateDirectory(_settings.VortexAppDataPath);
+            File.WriteAllText(Path.Combine(_settings.VortexAppDataPath, "state.json"), "S1");
+            var addOns = Directory.CreateDirectory(Path.Combine(_root, "AddOns")).FullName;
+            File.WriteAllText(Path.Combine(addOns, "addon.lua"), "lua");
+            var eso = CreateProfile() with { GameName = "ESO", UsesVortex = false, CustomFolders = [addOns] };
+
+            var batch = await _runner.RunBackupAsync([eso], new BackupOptions(false, false, true, true), _settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(batch.Results.Single().GameName, Is.EqualTo("ESO"));
+                Assert.That(Directory.Exists(Path.Combine(_drive, VortexAppDataBackup.FolderName)), Is.False);
+            });
+        }
+
+        [Test]
+        public async Task Backup_VortexAppData_LockedFile_PausesJobForTheSharedBackup()
+        {
+            Directory.CreateDirectory(_settings.VortexAppDataPath);
+            var locked = Path.Combine(_settings.VortexAppDataPath, "state.log");
+            File.WriteAllText(locked, "L");
+            File.WriteAllText(Path.Combine(_settings.VortexAppDataPath, "state.json"), "S1");
+
+            BackupBatchResult batch;
+
+            using (new FileStream(locked, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                batch = await _runner.RunBackupAsync([CreateProfile()], new BackupOptions(false, false, true, false), _settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(batch.FailedFiles.Single().SourcePath, Is.EqualTo(locked));
+                Assert.That(_jobState.Saved, Is.Not.Null);
+                Assert.That(_jobState.Saved!.ProfileId, Is.EqualTo(VortexAppDataBackup.ProfileId));
+            });
+        }
+
+        [Test]
+        public async Task Restore_VortexAppData_GoesToTheFolderFromSettings_ForSharedAndOlderPerGameBackups()
+        {
+            Directory.CreateDirectory(_settings.VortexAppDataPath);
+            File.WriteAllText(Path.Combine(_settings.VortexAppDataPath, "state.json"), "S1");
+
+            var batch = await _runner.RunBackupAsync([CreateProfile()], new BackupOptions(false, false, true, false), _settings);
+            var shared = (await _restore.ReadManifestAsync(batch.Results.Single().BackupDirectory))!;
+            var target = Path.Combine(_root, "moved-appdata");
+
+            // A backup made before AppData became global: the game's own profile id and its old AppData path.
+            var profile = CreateProfile();
+            var perGame = new BackupManifest
+            {
+                ProfileId = profile.Id,
+                GameName = profile.GameName,
+                IsComplete = true,
+                Units = [new BackupManifestUnit(BackupComponent.VortexAppData, "vortex_appdata.zip", string.Empty, @"C:\Old\Vortex", string.Empty)]
+            };
+
+            var sharedPlan = _restore.BuildPlan(shared, [profile], [BackupComponent.VortexAppData], target).Single();
+            var perGamePlan = _restore.BuildPlan(perGame, [profile], [BackupComponent.VortexAppData], target).Single();
+            var withoutSetting = _restore.BuildPlan(perGame, [profile], [BackupComponent.VortexAppData]).Single();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(sharedPlan.RootPath, Is.EqualTo(target));
+                Assert.That(sharedPlan.UsesOriginalPath, Is.False);
+                Assert.That(perGamePlan.RootPath, Is.EqualTo(target));
+                Assert.That(withoutSetting.RootPath, Is.EqualTo(@"C:\Old\Vortex"));
+                Assert.That(withoutSetting.UsesOriginalPath, Is.True);
+            });
+
+            var result = await _restore.RestoreAsync(batch.Results.Single().BackupDirectory, [sharedPlan]);
+
+            Assert.That(File.ReadAllText(Path.Combine(target, "state.json")), Is.EqualTo("S1"));
+            Assert.That(result.FailedPaths, Is.Empty);
         }
 
         [Test]

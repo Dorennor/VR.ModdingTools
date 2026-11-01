@@ -191,7 +191,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Vortex settings, profiles and load order. Only for games managed by Vortex."
+                    Description="Vortex settings, mod lists, profiles and load orders of all games. Backed up once per run into the shared #Vortex AppData# folder (folder set in Settings). Close Vortex first."
                     Header="Vortex AppData"
                     Icon="{ui:SymbolIcon Storage24}"
                     Visibility="{Binding ShowVortexComponents, Converter={StaticResource BoolToVisibility}}">
@@ -287,7 +287,7 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Vortex settings, profiles and load order."
+                        Description="Restored into the Vortex AppData folder from Settings. Shared by all games: every game's Vortex data returns to this backup. Close Vortex first."
                         Header="Vortex AppData"
                         Icon="{ui:SymbolIcon Storage24}"
                         Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}">

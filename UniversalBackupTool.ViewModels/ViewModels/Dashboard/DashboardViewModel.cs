@@ -8,6 +8,7 @@ using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interfaces.Storage;
+using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.ViewModel.ViewModels.Base;
 
@@ -68,7 +69,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         private string _editGameName = string.Empty;
 
         /// <summary>
-        /// Off for games whose mods Vortex does not manage: the staging and Vortex AppData rows are hidden and not saved.
+        /// Off for games whose mods Vortex does not manage: the staging row is hidden and not saved.
         /// </summary>
         [ObservableProperty]
         private bool _editUsesVortex = true;
@@ -78,9 +79,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         [ObservableProperty]
         private string _editGameRootPath = string.Empty;
-
-        [ObservableProperty]
-        private string _editVortexAppDataPath = string.Empty;
 
         [ObservableProperty]
         private bool _editUseIgnoreList = true;
@@ -120,19 +118,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             set => SwapDrive(value, EditGameRootPath, path => EditGameRootPath = path, nameof(EditGameRootDrive));
         }
 
-        public string? EditVortexAppDataDrive
-        {
-            get => _pathDriveService.GetDrive(EditVortexAppDataPath);
-            set => SwapDrive(value, EditVortexAppDataPath, path => EditVortexAppDataPath = path, nameof(EditVortexAppDataDrive));
-        }
-
         private string ProfilesFilePath => _storagePathsProvider.GetPaths().ProfilesFilePath;
 
         partial void OnEditVortexStagingPathChanged(string value) => OnPropertyChanged(nameof(EditVortexStagingDrive));
 
         partial void OnEditGameRootPathChanged(string value) => OnPropertyChanged(nameof(EditGameRootDrive));
-
-        partial void OnEditVortexAppDataPathChanged(string value) => OnPropertyChanged(nameof(EditVortexAppDataDrive));
 
         partial void OnSelectedFindPathChanged(ProfilePathEntry? value) => ClearFindResults();
 
@@ -154,7 +144,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditUsesVortex = true;
             EditVortexStagingPath = string.Empty;
             EditGameRootPath = string.Empty;
-            EditVortexAppDataPath = _systemPathsProvider.GetDefaultVortexAppDataPath();
             SetEditCustomPaths([]);
             EditUseIgnoreList = true;
 
@@ -178,10 +167,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditUsesVortex = profile.UsesVortex;
             EditVortexStagingPath = profile.VortexStagingPath ?? string.Empty;
             EditGameRootPath = profile.GameRootPath ?? string.Empty;
-
-            // Switching Vortex on for a non-Vortex profile proposes the usual AppData folder, like a new profile does.
-            EditVortexAppDataPath = profile.VortexAppDataPath
-                ?? (profile.UsesVortex ? string.Empty : _systemPathsProvider.GetDefaultVortexAppDataPath());
             SetEditCustomPaths(profile.CustomFolders);
             EditUseIgnoreList = profile.UseIgnoreList;
 
@@ -220,7 +205,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                         // A profile without Vortex keeps no Vortex paths, so nothing offers or backs them up.
                         VortexStagingPath = EditUsesVortex ? NullIfEmpty(EditVortexStagingPath) : null,
                         GameRootPath = NullIfEmpty(EditGameRootPath),
-                        VortexAppDataPath = EditUsesVortex ? NullIfEmpty(EditVortexAppDataPath) : null,
                         CustomFolders = customFolders,
                         UseIgnoreList = EditUseIgnoreList
                     };
@@ -267,9 +251,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         [RelayCommand]
         private void BrowseGameRootPath() => PickInto(EditGameRootPath, path => EditGameRootPath = path);
-
-        [RelayCommand]
-        private void BrowseVortexAppDataPath() => PickInto(EditVortexAppDataPath, path => EditVortexAppDataPath = path);
 
         [RelayCommand]
         private void AddCustomFolder()
@@ -387,7 +368,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             {
                 ProfilePathKind.VortexStaging => profile with { VortexStagingPath = newPath },
                 ProfilePathKind.GameRoot => profile with { GameRootPath = newPath },
-                ProfilePathKind.VortexAppData => profile with { VortexAppDataPath = newPath },
                 _ => profile with
                 {
                     CustomFolders = profile.CustomFolders
@@ -409,9 +389,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     AddFindable(profile, ProfilePathKind.VortexStaging, profile.VortexStagingPath);
 
                 AddFindable(profile, ProfilePathKind.GameRoot, profile.GameRootPath);
-
-                if (profile.UsesVortex)
-                    AddFindable(profile, ProfilePathKind.VortexAppData, profile.VortexAppDataPath);
 
                 foreach (var folder in profile.CustomFolders)
                     AddFindable(profile, ProfilePathKind.CustomFolder, folder);
@@ -477,6 +454,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
             if (name.Length == 0)
                 return "Game name cannot be empty.";
+
+            if (VortexAppDataBackup.IsReservedName(name))
+                return $"\"{VortexAppDataBackup.FolderName}\" is reserved for the shared Vortex AppData backups. Choose another game name.";
 
             var duplicate = Profiles.Any(item =>
                 item.Profile.Id != _editingProfileId &&

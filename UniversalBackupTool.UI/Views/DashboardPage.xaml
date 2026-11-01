@@ -32,7 +32,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel>
                         <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Game profiles" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Games, their Vortex staging, game and AppData folders, and extra folders to back up." />
+                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Games, their Vortex staging and game folders, and extra folders to back up. The Vortex AppData folder is shared by all games and set in Settings." />
                     </StackPanel>
                     <StackPanel
                         Grid.Column="1"
@@ -118,7 +118,7 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Turn off for games whose mods are not managed by Vortex (for example ESO add-ons or Anno 1404). The profile then has no staging or Vortex AppData folder, and those backup components are not offered for it."
+                        Description="Turn off for games whose mods are not managed by Vortex (for example ESO add-ons or Anno 1404). The profile then has no staging folder, and the staging and Vortex AppData components are not offered for it."
                         Header="Managed by Vortex"
                         Icon="{ui:SymbolIcon PuzzlePiece24}">
                         <ui:ToggleSwitch
@@ -179,35 +179,6 @@
                                 Grid.Column="2"
                                 Margin="8,0,0,0"
                                 Command="{Binding BrowseGameRootPathCommand}"
-                                Content="Browse"
-                                Icon="{ui:SymbolIcon FolderOpen24}" />
-                        </Grid>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="Vortex settings, profiles and load order. Usually %APPDATA%\Vortex."
-                        Header="Vortex AppData folder"
-                        Icon="{ui:SymbolIcon Storage24}"
-                        IsStacked="True"
-                        Visibility="{Binding EditUsesVortex, Converter={StaticResource BoolToVisibility}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ui:TextBox Text="{Binding EditVortexAppDataPath, UpdateSourceTrigger=PropertyChanged}" />
-                            <ComboBox
-                                Grid.Column="1"
-                                Width="76"
-                                Margin="8,0,0,0"
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding EditVortexAppDataDrive, Mode=TwoWay}"
-                                ToolTip="Change only the drive letter" />
-                            <ui:Button
-                                Grid.Column="2"
-                                Margin="8,0,0,0"
-                                Command="{Binding BrowseVortexAppDataPathCommand}"
                                 Content="Browse"
                                 Icon="{ui:SymbolIcon FolderOpen24}" />
                         </Grid>
@@ -404,18 +375,6 @@
                                                     Grid.Column="1"
                                                     Style="{StaticResource PathTextStyle}"
                                                     Text="{Binding GameRootPath}" />
-                                            </Grid>
-
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexAppDataPath, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Vortex AppData" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource PathTextStyle}"
-                                                    Text="{Binding VortexAppDataPath}" />
                                             </Grid>
 
                                             <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasCustomFolders, Converter={StaticResource BoolToVisibility}}">

@@ -1,20 +1,23 @@
 ﻿<#
     Installs Vortex Backup Tool into D:\Programs\Vortex Backup Tool and creates a desktop shortcut.
 
-    - Builds the portable single-file .exe (publish profile "Portable") from this repository, or uses -SourceExe.
+    - The .exe to install, in this order: -SourceExe; else the output of the "Portable" publish profile
+      (UniversalBackupTool.UI\bin\Publish\Portable, from Visual Studio Publish > Portable or dotnet publish);
+      else it builds the portable single-file .exe itself (-Build forces that even when a published .exe exists).
     - Only the .exe is copied/replaced. Data next to it (settings.json, profiles.json, Snapshots, Logs, Temp,
       SafetyBackups, Backups) is never touched, so running Install again is a safe update.
     - On a fresh install, if a backup made by Uninstall exists in "G:\Мій диск\Software backups\Vortex Backup Tool",
       it offers to restore that data.
 
-    Run Install.bat (double-click) or: powershell -ExecutionPolicy Bypass -File Install.ps1 [-SourceExe <path>]
+    Run Install.bat (double-click) or: powershell -ExecutionPolicy Bypass -File Install.ps1 [-SourceExe <path>] [-Build]
 #>
 [CmdletBinding()]
 param(
     [string]$InstallRoot = 'D:\Programs',
     [string]$BackupRoot = 'G:\Мій диск\Software backups',
     [string]$ShortcutFolder = [Environment]::GetFolderPath('Desktop'),
-    [string]$SourceExe
+    [string]$SourceExe,
+    [switch]$Build
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,14 +39,23 @@ try {
         throw "$AppName is running from $InstallDir. Close it and run Install again."
     }
 
-    # 1. The .exe to install.
+    # 1. The .exe to install: -SourceExe, else the published one, else build it.
     $publishDir = $null
+    $publishedExe = [IO.Path]::Combine($PSScriptRoot, '..', 'bin', 'Publish', 'Portable', $ExeName)
 
     if ($SourceExe) {
         if (-not (Test-Path -LiteralPath $SourceExe -PathType Leaf)) { throw "Source .exe not found: $SourceExe" }
         $exe = (Resolve-Path -LiteralPath $SourceExe).Path
     }
+    elseif (-not $Build -and (Test-Path -LiteralPath $publishedExe -PathType Leaf)) {
+        $exe = (Resolve-Path -LiteralPath $publishedExe).Path
+        $published = (Get-Item -LiteralPath $exe).LastWriteTime
+        Write-Host "Using the published .exe: $exe" -ForegroundColor Cyan
+        Write-Host "  published $($published.ToString('yyyy-MM-dd HH:mm')). Publish again first if the code changed since, or run with -Build."
+    }
     else {
+        if (-not $Build) { Write-Host "No published .exe in $([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($publishedExe)))." -ForegroundColor Yellow }
+
         $project = Join-Path $PSScriptRoot '..\UniversalBackupTool.UI.csproj'
 
         if (-not (Test-Path -LiteralPath $project)) { throw "Project not found: $project. Pass -SourceExe <path to $ExeName>." }

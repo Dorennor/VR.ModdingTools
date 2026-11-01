@@ -16,8 +16,6 @@ namespace UniversalBackupTool.Tests
 
             public IReadOnlyList<string> GetAvailableDrives() => Drives;
 
-            public string GetDefaultVortexAppDataPath() => @"C:\Users\Test\AppData\Roaming\Vortex";
-
             public bool PathExists(string path)
             {
                 ExistsCallCount++;

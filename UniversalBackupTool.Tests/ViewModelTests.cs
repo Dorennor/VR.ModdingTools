@@ -2,6 +2,7 @@ using UniversalBackupTool.Interface.Interfaces.Appearance;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Paths;
+using UniversalBackupTool.Interface.Interfaces.Vortex;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Operations;
@@ -63,11 +64,16 @@ namespace UniversalBackupTool.Tests
         public void Apply(AppTheme theme) => Applied.Add(theme);
     }
 
+    internal sealed class FakeVortexProcess : IVortexProcessService
+    {
+        public bool IsRunning { get; set; }
+
+        public bool IsVortexRunning() => IsRunning;
+    }
+
     internal sealed class FakeDrives : ISystemPathsProvider
     {
         public IReadOnlyList<string> GetAvailableDrives() => ["C:", "D:"];
-
-        public string GetDefaultVortexAppDataPath() => @"C:\Users\Test\AppData\Roaming\Vortex";
 
         public bool PathExists(string path) => false;
     }
@@ -81,6 +87,7 @@ namespace UniversalBackupTool.Tests
         private OperationCoordinator _coordinator = null!;
         private FakeDialogs _dialogs = null!;
         private FakeBackupJobRunner _runner = null!;
+        private FakeVortexProcess _vortex = null!;
 
         [SetUp]
         public void SetUp()
@@ -91,6 +98,7 @@ namespace UniversalBackupTool.Tests
             _coordinator = new OperationCoordinator(_output);
             _dialogs = new FakeDialogs();
             _runner = new FakeBackupJobRunner();
+            _vortex = new FakeVortexProcess();
         }
 
         [TearDown]
@@ -120,6 +128,7 @@ namespace UniversalBackupTool.Tests
                 _dialogs,
                 _dialogs,
                 new PathDriveService(new FakeDrives()),
+                _vortex,
                 _coordinator,
                 _output);
 
@@ -265,6 +274,73 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Settings_VortexAppDataFolder_IsLoadedValidatedAndSaved()
+        {
+            var store = new JsonSettingsStore();
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")) with { VortexAppDataPath = @"D:\Vortex" });
+
+            var viewModel = new SettingsViewModel(store, _paths, _dialogs, new FakeThemeService(), _coordinator, _output);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.That(viewModel.VortexAppDataPath, Is.EqualTo(@"D:\Vortex"));
+
+            viewModel.VortexAppDataPath = "  ";
+            await viewModel.SaveCommand.ExecuteAsync(null);
+
+            var afterInvalidSave = await store.LoadAsync(settingsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_output.Entries.Any(entry => entry.Severity == OutputSeverity.Error && entry.Message.Contains("Vortex AppData folder cannot be empty")), Is.True);
+                Assert.That(afterInvalidSave.VortexAppDataPath, Is.EqualTo(@"D:\Vortex"));
+            });
+
+            viewModel.VortexAppDataPath = @" E:\Vortex ";
+            await viewModel.SaveCommand.ExecuteAsync(null);
+
+            Assert.That((await store.LoadAsync(settingsPath)).VortexAppDataPath, Is.EqualTo(@"E:\Vortex"));
+        }
+
+        [Test]
+        public async Task Backup_WithVortexAppData_AsksFirst_WhenVortexIsRunning()
+        {
+            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            await new JsonSettingsStore().SaveAsync(_paths.GetPaths().SettingsFilePath, AppSettings.Default(Path.Combine(_root, "Backups")));
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            viewModel.Targets.Single().IsSelected = true;
+            viewModel.IncludeStaging = true;
+            viewModel.IncludeVortexAppData = true;
+            _vortex.IsRunning = true;
+            _dialogs.ConfirmResult = false;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.RunCount, Is.Zero, "declined while Vortex runs");
+
+            viewModel.IncludeVortexAppData = false;
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.RunCount, Is.EqualTo(1), "staging alone does not need Vortex closed");
+        }
+
+        [Test]
+        public async Task Dashboard_RejectsTheSharedVortexAppDataFolderNameAsGameName()
+        {
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            viewModel.AddProfileCommand.Execute(null);
+            viewModel.EditGameName = "#vortex appdata#";
+            viewModel.EditVortexStagingPath = @"D:\Staging";
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.Profiles, Is.Empty);
+                Assert.That(_output.Entries.Any(entry => entry.Severity == OutputSeverity.Error && entry.Message.Contains("is reserved")), Is.True);
+            });
+        }
+
+        [Test]
         public async Task Settings_ThemeChange_IsAppliedAndSavedImmediately_ButNotOnLoad()
         {
             var theme = new FakeThemeService();
@@ -364,7 +440,6 @@ namespace UniversalBackupTool.Tests
             {
                 Assert.That(anno.UsesVortex, Is.False);
                 Assert.That(anno.VortexStagingPath, Is.Null);
-                Assert.That(anno.VortexAppDataPath, Is.Null);
                 Assert.That(anno.GameRootPath, Is.EqualTo(game));
                 Assert.That(viewModel.Profiles.Single(item => item.GameName == "Anno 1404").HasVortexStagingPath, Is.False);
             });

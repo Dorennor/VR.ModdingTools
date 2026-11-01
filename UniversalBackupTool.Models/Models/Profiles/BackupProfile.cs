@@ -8,7 +8,7 @@ namespace UniversalBackupTool.Model.Models.Profiles
 
         /// <summary>
         /// Whether the game's mods are managed by Vortex. Without Vortex (for example ESO add-ons or Anno 1404) the profile
-        /// has no staging or Vortex AppData folder, and those backup components do not apply to it. Profiles saved before
+        /// has no staging folder, and the staging and Vortex AppData components do not apply to it. Profiles saved before
         /// this setting existed load as Vortex profiles.
         /// </summary>
         public bool UsesVortex { get; init; } = true;
@@ -17,7 +17,9 @@ namespace UniversalBackupTool.Model.Models.Profiles
 
         public string? GameRootPath { get; init; }
 
-        public string? VortexAppDataPath { get; init; }
+        // The Vortex AppData folder is shared by all games and set once in the settings (AppSettings.VortexAppDataPath).
+        // profiles.json files written before that still hold a VortexAppDataPath field: the settings migration reads it
+        // once, it is ignored on load and dropped on the next save.
 
         public List<string> CustomFolders { get; init; } = new();
 
