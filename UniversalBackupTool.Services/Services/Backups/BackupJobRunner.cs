@@ -1580,7 +1580,8 @@ namespace UniversalBackupTool.Service.Services.Backups
         {
             try
             {
-                return new FileInfo(path).Length;
+                // Archiving reads through a symbolic link, so the target's size is what gets written; the link itself is 0 bytes.
+                return ResolveFileForMetadata(path).Length;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {

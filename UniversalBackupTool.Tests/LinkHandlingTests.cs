@@ -432,6 +432,40 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Backup_ProgressTotal_IncludesSymlinkTargetBytes()
+        {
+            var custom = Path.Combine(_root, "custom");
+            var realFile = Write(Path.Combine(_outside, "real.bin"), "real content");
+            FileSymlink(Path.Combine(custom, "linked.bin"), realFile);
+            Write(Path.Combine(custom, "plain.bin"), "abc");
+
+            var runner = new BackupJobRunner(
+                new ArchiveService(),
+                _fileSystem,
+                new SnapshotService(_fileSystem, new FakeSafetyBackupService()),
+                new JsonSnapshotStore(),
+                new IgnorePatternMatcher(),
+                new FakeJobStateService(),
+                new FakeStoragePathsProvider(Path.Combine(_root, "app")));
+            var profile = new BackupProfile { GameName = "Links", CustomFolders = [custom] };
+            var reports = new List<BackupProgress>();
+
+            await runner.RunBackupAsync(
+                [profile],
+                new BackupOptions(false, false, false, true),
+                AppSettings.Default(Path.Combine(_root, "drive")),
+                new SynchronousProgress<BackupProgress>(reports.Add));
+
+            var archiving = reports.Where(report => report.Phase.Contains("archiving", StringComparison.Ordinal)).ToList();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(archiving.Select(report => report.TotalBytes).Distinct(), Is.EqualTo(new[] { 15L }), "the link counts as its target's size");
+                Assert.That(archiving.Max(report => report.BytesProcessed), Is.LessThanOrEqualTo(15));
+            });
+        }
+
+        [Test]
         public async Task Backup_SymlinkTargetChange_IsDetectedOnNextRun()
         {
             var appRoot = Path.Combine(_root, "app");
