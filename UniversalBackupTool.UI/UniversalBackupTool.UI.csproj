@@ -25,4 +25,13 @@
     <ProjectReference Include="..\UniversalBackupTool.ViewModels\UniversalBackupTool.ViewModel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Scripts\Install.bat">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Scripts\Install.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
