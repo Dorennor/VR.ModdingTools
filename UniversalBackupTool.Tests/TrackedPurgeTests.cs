@@ -7,7 +7,6 @@ using UniversalBackupTool.Model.Models.Snapshots;
 using UniversalBackupTool.Service.Services.Backups;
 using UniversalBackupTool.Service.Services.Snapshots;
 using UniversalBackupTool.Services;
-using UniversalBackupTool.Services.Backups;
 
 namespace UniversalBackupTool.Tests
 {
