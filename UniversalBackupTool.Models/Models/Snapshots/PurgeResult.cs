@@ -20,5 +20,15 @@ namespace UniversalBackupTool.Model.Models.Snapshots
         /// could not be deleted) or could not be removed (in use, access denied).
         /// </summary>
         public int FoldersKept { get; init; }
+
+        /// <summary>
+        /// Vanilla files found at another path that were put back at their snapshot path instead of being deleted.
+        /// </summary>
+        public int FilesMovedBack { get; init; }
+
+        /// <summary>
+        /// Moved vanilla files that could not be put back (in use, access denied). They are left where they are, not deleted.
+        /// </summary>
+        public IReadOnlyList<string> FilesNotMovedBack { get; init; } = [];
     }
 }

@@ -67,7 +67,7 @@ namespace UniversalBackupTool.Services
 
                     var (linkCount, fileId) = NativeFileInfo.GetLinkInfo(file.FullName);
                     var kind = linkCount > 1 ? FileEntryKind.HardLink : FileEntryKind.File;
-                    entries.Add(new ScannedEntry(file.FullName, relative, kind, SafeLength(file), SafeLastWriteUtc(file), linkCount, fileId));
+                    entries.Add(new ScannedEntry(file.FullName, relative, kind, SafeLength(file), SafeLastWriteUtc(file), linkCount, fileId) { CreationTimeUtc = SafeCreationUtc(file) });
                 }
             }
 
@@ -262,6 +262,18 @@ namespace UniversalBackupTool.Services
             catch (IOException)
             {
                 return 0;
+            }
+        }
+
+        private static DateTime? SafeCreationUtc(FileInfo file)
+        {
+            try
+            {
+                return file.CreationTimeUtc;
+            }
+            catch (IOException)
+            {
+                return null;
             }
         }
 

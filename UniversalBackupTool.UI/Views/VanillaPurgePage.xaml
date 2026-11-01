@@ -59,6 +59,17 @@
                         IsEnabled="{Binding CanCreateSnapshot}" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard
+                    Description="Adds what this snapshot lacks (file versions, creation times) from the files on disk and updates timestamps of reinstalled or copied files. Only files proven to be the vanilla file are used: their content must match the hash in the snapshot, so mods can stay deployed. Nothing in the game folder changes."
+                    Header="Add missing details"
+                    Icon="{ui:SymbolIcon DocumentAdd24}">
+                    <ui:Button
+                        Command="{Binding UpgradeSnapshotCommand}"
+                        Content="Add missing details"
+                        Icon="{ui:SymbolIcon DocumentAdd24}"
+                        IsEnabled="{Binding CanPurge}" />
+                </controls:SettingsCard>
+
                 <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Purge" />
 
                 <controls:SettingsCard

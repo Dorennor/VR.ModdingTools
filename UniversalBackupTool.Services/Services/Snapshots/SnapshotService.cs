@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 
 using UniversalBackupTool.Interface.Interfaces.Backups;
@@ -16,6 +17,18 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         /// so the same files are not read again.
         /// </summary>
         internal const string VerifyStepName = "Checking vanilla files with new timestamps (nothing is archived in this step; done once)";
+
+        private const string UpgradeStepName = "Adding missing details to the snapshot";
+
+        private const string RelocationStepName = "Looking for moved or copied vanilla files";
+
+        /// <summary>
+        /// The file types that carry a version resource. Other files are never opened for it.
+        /// </summary>
+        private static readonly HashSet<string> VersionedExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".dll", ".asi", ".sys", ".ocx"
+        };
 
         private readonly IFileSystemProvider _fileSystemProvider;
         private readonly ISafetyBackupService _safetyBackupService;
@@ -47,10 +60,13 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var hash = TryComputeHash(Path.Combine(rootPath, file.RelativePath), cancellationToken);
+                var fullPath = Path.Combine(rootPath, file.RelativePath);
 
-                if (hash is not null)
-                    scanned.Files[file.RelativePath] = file with { Sha256 = hash };
+                scanned.Files[file.RelativePath] = file with
+                {
+                    Sha256 = TryComputeHash(fullPath, cancellationToken),
+                    FileVersion = TryReadFileVersion(fullPath)
+                };
 
                 bytesDone += file.SizeBytes;
                 filesDone++;
@@ -167,6 +183,8 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             var toVerify = new List<(FileMetadata Baseline, FileMetadata Current)>();
             var reanchored = new List<FileMetadata>();
             var unverified = 0;
+            var versionChanged = 0;
+            var unreadable = 0;
 
             foreach (var current in currentSnapshot.Files)
             {
@@ -178,25 +196,35 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                     continue;
                 }
 
-                if (baselineFile.SizeBytes == current.Value.SizeBytes
-                    && baselineFile.LastWriteTimeUtc == current.Value.LastWriteTimeUtc
-                    && baselineFile.Kind == current.Value.Kind)
+                // First pass: identical metadata counts as the same file, and nothing is read.
+                if (MetadataMatches(baselineFile, current.Value))
                     continue;
 
-                // Only a regular file whose size is unchanged can still have the same content; it is hashed below.
-                var contentMayMatch = verifyContent
-                    && baselineFile.Kind == FileEntryKind.File
-                    && current.Value.Kind == FileEntryKind.File
-                    && baselineFile.SizeBytes == current.Value.SizeBytes;
-
-                if (contentMayMatch && baselineFile.Sha256 is not null)
+                if (verifyContent && HasOwnData(baselineFile) && HasOwnData(current.Value))
                 {
-                    toVerify.Add((baselineFile, current.Value));
-                    continue;
-                }
+                    var currentVersion = baselineFile.FileVersion is null ? null : TryReadFileVersion(Path.Combine(rootPath, current.Value.RelativePath));
 
-                if (contentMayMatch)
-                    unverified++;
+                    if (currentVersion is not null && !string.Equals(currentVersion, baselineFile.FileVersion, StringComparison.Ordinal))
+                    {
+                        versionChanged++;
+                        changes[current.Key] = current.Value with { FileVersion = currentVersion };
+                        continue;
+                    }
+
+                    // Only a file whose size is unchanged can still have the same content; it is hashed below. Timestamps and
+                    // the regular/hardlink difference say nothing about the content, so they do not decide anything here.
+                    if (baselineFile.SizeBytes == current.Value.SizeBytes)
+                    {
+                        if (baselineFile.Sha256 is not null)
+                        {
+                            toVerify.Add((baselineFile, current.Value));
+                            continue;
+                        }
+
+                        if (baselineFile.Kind == FileEntryKind.File)
+                            unverified++;
+                    }
+                }
 
                 changes[current.Key] = current.Value;
             }
@@ -218,16 +246,20 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var hash = TryComputeHash(Path.Combine(rootPath, currentFile.RelativePath), cancellationToken);
+                var fullPath = Path.Combine(rootPath, currentFile.RelativePath);
+                var hash = TryComputeHash(fullPath, cancellationToken);
 
                 if (hash is not null && string.Equals(hash, baselineFile.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    var anchored = baselineFile with { LastWriteTimeUtc = currentFile.LastWriteTimeUtc };
+                    var anchored = Anchor(baselineFile, currentFile, fullPath);
                     reanchored.Add(anchored);
                     onReanchored?.Invoke(anchored);
                 }
                 else
                 {
+                    if (hash is null)
+                        unreadable++;
+
                     changes[currentFile.RelativePath] = currentFile with { Sha256 = hash };
                 }
 
@@ -236,7 +268,237 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                 throttle.Report(new BackupProgress(VerifyStepName, currentFile.RelativePath, bytesDone, totalBytes, filesDone, toVerify.Count), force: filesDone == toVerify.Count);
             }
 
-            return new SnapshotComparison(changes, reanchored, unverified);
+            var relocated = verifyContent
+                ? FindRelocated(rootPath, baselineSnapshot, currentSnapshot.Files, cancellationToken, progress)
+                : [];
+
+            return new SnapshotComparison(changes, reanchored, unverified)
+            {
+                Relocated = relocated,
+                VersionChanged = versionChanged,
+                UnreadableFiles = unreadable
+            };
+        }
+
+        public async Task<SnapshotUpgradeResult> UpgradeSnapshotAsync(
+            string rootPath,
+            SnapshotData baselineSnapshot,
+            CancellationToken cancellationToken = default,
+            IProgress<BackupProgress>? progress = null,
+            Action<FileMetadata>? onUpgraded = null)
+        {
+            ArgumentNullException.ThrowIfNull(baselineSnapshot);
+
+            var current = (await ScanAsync(baselineSnapshot.ProfileId, rootPath, cancellationToken)).Files;
+            var work = new List<(FileMetadata Baseline, FileMetadata Current, bool Hash)>();
+            var different = new List<string>();
+            int complete = 0, missing = 0, links = 0, cannotProve = 0;
+
+            foreach (var baseline in baselineSnapshot.Files.Values)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // A link recorded without a hash was a deployment when the snapshot was taken; its data is not vanilla data.
+                if (!HasOwnData(baseline) || (baseline.Kind != FileEntryKind.File && baseline.Sha256 is null))
+                {
+                    links++;
+                    continue;
+                }
+
+                if (!current.TryGetValue(baseline.RelativePath, out var file))
+                {
+                    missing++;
+                    continue;
+                }
+
+                // Without a stored hash, nothing could tell a deployed mod file from the vanilla file.
+                if (!HasOwnData(file) || (file.Kind != FileEntryKind.File && baseline.Sha256 is null))
+                {
+                    links++;
+                    continue;
+                }
+
+                if (baseline.SizeBytes != file.SizeBytes)
+                {
+                    different.Add(baseline.RelativePath);
+                    continue;
+                }
+
+                var metadataMatches = MetadataMatches(baseline, file);
+
+                if (metadataMatches && baseline.Sha256 is not null && baseline.CreationTimeUtc is not null)
+                    complete++;
+                else if (metadataMatches)
+                    work.Add((baseline, file, baseline.Sha256 is null));
+                else if (baseline.Sha256 is not null)
+                    work.Add((baseline, file, true));
+                else
+                    cannotProve++;
+            }
+
+            var totalBytes = work.Where(item => item.Hash).Sum(item => item.Current.SizeBytes);
+            var throttle = new ProgressThrottle(progress);
+            var bytesDone = 0L;
+            var filesDone = 0;
+            var upgraded = 0;
+            var unreadable = 0;
+
+            throttle.Report(new BackupProgress(UpgradeStepName, null, 0, totalBytes, 0, work.Count), force: true);
+
+            foreach (var (baseline, file, needsHash) in work)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var fullPath = Path.Combine(rootPath, file.RelativePath);
+                var hash = needsHash ? TryComputeHash(fullPath, cancellationToken) : baseline.Sha256;
+
+                if (hash is null)
+                    unreadable++;
+
+                // A stored hash is the proof. Without one the metadata matched, which is what the first pass trusts too.
+                if (baseline.Sha256 is not null && hash is not null && !string.Equals(hash, baseline.Sha256, StringComparison.OrdinalIgnoreCase))
+                    different.Add(baseline.RelativePath);
+                else if (hash is not null || baseline.Sha256 is null)
+                {
+                    var entry = Anchor(baseline, file, fullPath) with { Sha256 = baseline.Sha256 ?? hash };
+                    upgraded++;
+                    onUpgraded?.Invoke(entry);
+                }
+
+                if (needsHash)
+                    bytesDone += file.SizeBytes;
+
+                filesDone++;
+                throttle.Report(new BackupProgress(UpgradeStepName, file.RelativePath, bytesDone, totalBytes, filesDone, work.Count), force: filesDone == work.Count);
+            }
+
+            return new SnapshotUpgradeResult(upgraded, complete, missing, links, cannotProve, unreadable, different);
+        }
+
+        public async Task<IReadOnlyList<RelocatedFile>> FindRelocatedFilesAsync(
+            string rootPath,
+            SnapshotData baselineSnapshot,
+            CancellationToken cancellationToken = default,
+            IProgress<BackupProgress>? progress = null)
+        {
+            ArgumentNullException.ThrowIfNull(baselineSnapshot);
+
+            var current = await ScanAsync(baselineSnapshot.ProfileId, rootPath, cancellationToken);
+
+            return FindRelocated(rootPath, baselineSnapshot, current.Files, cancellationToken, progress);
+        }
+
+        /// <summary>
+        /// Regular files at new paths with the content of a vanilla file. Only files with the size of a hashed vanilla file
+        /// are read, so this costs next to nothing normally. Empty files all look alike and are skipped. Each vanilla file
+        /// counts as moved once; other files with its content are copies.
+        /// </summary>
+        private static List<RelocatedFile> FindRelocated(
+            string rootPath,
+            SnapshotData baseline,
+            IReadOnlyDictionary<string, FileMetadata> current,
+            CancellationToken cancellationToken,
+            IProgress<BackupProgress>? progress)
+        {
+            var bySize = baseline.Files.Values
+                .Where(file => file.Sha256 is not null && file.SizeBytes > 0)
+                .ToLookup(file => file.SizeBytes);
+            var candidates = current.Values
+                .Where(file => file.Kind == FileEntryKind.File && !baseline.Files.ContainsKey(file.RelativePath) && bySize.Contains(file.SizeBytes))
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var result = new List<RelocatedFile>();
+            var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var throttle = new ProgressThrottle(progress);
+            var totalBytes = candidates.Sum(file => file.SizeBytes);
+            var bytesDone = 0L;
+            var filesDone = 0;
+
+            foreach (var candidate in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var hash = TryComputeHash(Path.Combine(rootPath, candidate.RelativePath), cancellationToken);
+                var matches = hash is null
+                    ? []
+                    : bySize[candidate.SizeBytes]
+                        .Where(file => string.Equals(file.Sha256, hash, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                if (matches.Count > 0)
+                {
+                    var free = matches.FirstOrDefault(file => !current.ContainsKey(file.RelativePath) && !claimed.Contains(file.RelativePath));
+
+                    if (free is not null)
+                        claimed.Add(free.RelativePath);
+
+                    result.Add(new RelocatedFile(candidate.RelativePath, (free ?? matches[0]).RelativePath, free is not null));
+                }
+
+                bytesDone += candidate.SizeBytes;
+                filesDone++;
+                throttle.Report(new BackupProgress(RelocationStepName, candidate.RelativePath, bytesDone, totalBytes, filesDone, candidates.Count), force: filesDone == candidates.Count);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// The first pass, which reads no file. Creation time counts only when the snapshot has it.
+        /// </summary>
+        private static bool MetadataMatches(FileMetadata baseline, FileMetadata current)
+        {
+            return baseline.SizeBytes == current.SizeBytes
+                && baseline.LastWriteTimeUtc == current.LastWriteTimeUtc
+                && baseline.Kind == current.Kind
+                && (baseline.CreationTimeUtc is null || current.CreationTimeUtc is null || baseline.CreationTimeUtc == current.CreationTimeUtc);
+        }
+
+        /// <summary>
+        /// Regular files and hardlinks: a name that holds file data, which can be hashed and compared. A hardlink with
+        /// vanilla content is simply the vanilla file with one more name.
+        /// </summary>
+        private static bool HasOwnData(FileMetadata file) => file.Kind is FileEntryKind.File or FileEntryKind.HardLink;
+
+        /// <summary>
+        /// The baseline entry of a file proven identical, with what the disk says now. The hash is kept.
+        /// </summary>
+        private static FileMetadata Anchor(FileMetadata baseline, FileMetadata current, string fullPath)
+        {
+            return baseline with
+            {
+                LastWriteTimeUtc = current.LastWriteTimeUtc,
+                CreationTimeUtc = current.CreationTimeUtc,
+                Kind = current.Kind,
+                IsSymlink = false,
+                FileVersion = baseline.FileVersion ?? TryReadFileVersion(fullPath)
+            };
+        }
+
+        /// <summary>
+        /// File version from the version resource, or null for other file types, files without one and unreadable files.
+        /// Uses the numeric version: the text version is free-form and can differ by language.
+        /// </summary>
+        internal static string? TryReadFileVersion(string path)
+        {
+            if (!VersionedExtensions.Contains(Path.GetExtension(path)))
+                return null;
+
+            try
+            {
+                var info = FileVersionInfo.GetVersionInfo(path);
+
+                if (info.FileMajorPart != 0 || info.FileMinorPart != 0 || info.FileBuildPart != 0 || info.FilePrivatePart != 0)
+                    return $"{info.FileMajorPart}.{info.FileMinorPart}.{info.FileBuildPart}.{info.FilePrivatePart}";
+
+                return string.IsNullOrWhiteSpace(info.FileVersion) ? null : info.FileVersion.Trim();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -265,7 +527,8 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                     LastWriteTimeUtc: entry.LastWriteTimeUtc,
                     IsSymlink: entry.Kind is FileEntryKind.FileSymlink or FileEntryKind.DirectoryLink)
                 {
-                    Kind = entry.Kind
+                    Kind = entry.Kind,
+                    CreationTimeUtc = entry.CreationTimeUtc
                 };
             }
 
@@ -310,8 +573,15 @@ namespace UniversalBackupTool.Service.Services.Snapshots
 
             // Not following links: entries below directory links are never visited, so link targets are never touched.
             var entries = await Task.Run(() => _fileSystemProvider.ScanWithoutFollowingLinks(rootPath, cancellationToken), cancellationToken);
+
+            // Deleting a moved vanilla file would lose it from the game; it goes back to its snapshot path instead.
+            var current = (await ScanAsync(baselineSnapshot.ProfileId, rootPath, cancellationToken)).Files;
+            var movedBack = FindRelocated(rootPath, baselineSnapshot, current, cancellationToken, null)
+                .Where(file => file.OriginalMissing)
+                .ToDictionary(file => file.RelativePath, file => file.OriginalPath, StringComparer.OrdinalIgnoreCase);
+
             var toDelete = entries
-                .Where(entry => !baselineSnapshot.Files.ContainsKey(entry.RelativePath))
+                .Where(entry => !baselineSnapshot.Files.ContainsKey(entry.RelativePath) && !movedBack.ContainsKey(entry.RelativePath))
                 .ToList();
 
             var safetyBackupFiles = SelectEntriesNeedingSafetyCopy(toDelete)
@@ -330,6 +600,24 @@ namespace UniversalBackupTool.Service.Services.Snapshots
 
                 if (entry.Kind != FileEntryKind.File)
                     linksRemoved++;
+            }
+
+            var notMovedBack = new List<string>();
+
+            foreach (var (relative, original) in movedBack)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var destination = Path.Combine(rootPath, original.Replace('/', Path.DirectorySeparatorChar));
+
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Move(Path.Combine(rootPath, relative.Replace('/', Path.DirectorySeparatorChar)), destination, overwrite: false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    notMovedBack.Add(relative);
+                }
             }
 
             // Deepest first, so a folder whose subfolders were just removed is empty when its turn comes. Empty folders
@@ -366,7 +654,9 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             {
                 LinksRemoved = linksRemoved,
                 FoldersRemoved = foldersRemoved,
-                FoldersKept = foldersKept
+                FoldersKept = foldersKept,
+                FilesMovedBack = movedBack.Count - notMovedBack.Count,
+                FilesNotMovedBack = notMovedBack
             };
         }
 

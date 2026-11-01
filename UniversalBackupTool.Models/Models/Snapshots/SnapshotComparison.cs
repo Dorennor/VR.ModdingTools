@@ -16,5 +16,22 @@ namespace UniversalBackupTool.Model.Models.Snapshots
     public sealed record SnapshotComparison(
         Dictionary<string, FileMetadata> Changes,
         IReadOnlyList<FileMetadata> Reanchored,
-        int UnverifiedFiles);
+        int UnverifiedFiles)
+    {
+        /// <summary>
+        /// Files at new paths with the content of a vanilla file. They stay in <see cref="Changes"/>: their new path can
+        /// matter (a mod keeping the original under another name), so a backup has to include them.
+        /// </summary>
+        public IReadOnlyList<RelocatedFile> Relocated { get; init; } = [];
+
+        /// <summary>
+        /// Vanilla files whose file version differs from the snapshot: the game was updated or a mod replaced them.
+        /// </summary>
+        public int VersionChanged { get; init; }
+
+        /// <summary>
+        /// Files reported as modified because they needed a content check but could not be read (in use, access denied).
+        /// </summary>
+        public int UnreadableFiles { get; init; }
+    }
 }

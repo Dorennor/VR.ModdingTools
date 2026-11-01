@@ -168,6 +168,68 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             });
         }
 
+        /// <summary>
+        /// Adds what the stored snapshot lacks from the files on disk, for files proven to be the vanilla file. What was
+        /// already verified is saved also when the operation is cancelled.
+        /// </summary>
+        [RelayCommand]
+        private async Task UpgradeSnapshotAsync()
+        {
+            var target = GetPurgeTarget();
+
+            if (target is null)
+                return;
+
+            await RunOperationAsync("Upgrade Snapshot", async scope =>
+            {
+                var snapshotsDirectory = _storagePathsProvider.GetPaths().SnapshotsDirectory;
+                var upgraded = new List<FileMetadata>();
+
+                scope.Report(new($"scanning {target.RootPath}", null, 0, 0, 0, 0));
+
+                SnapshotUpgradeResult result;
+
+                try
+                {
+                    result = await Task.Run(
+                        () => _snapshotService.UpgradeSnapshotAsync(target.RootPath, target.Snapshot, scope.CancellationToken, scope, upgraded.Add),
+                        scope.CancellationToken);
+                }
+                finally
+                {
+                    await _snapshotStore.UpdateEntriesAsync(snapshotsDirectory, target.Profile.Id, upgraded, CancellationToken.None);
+
+                    if (SelectedProfile?.Profile.Id == target.Profile.Id)
+                        await LoadSnapshotAsync(target.Profile.Id);
+                }
+
+                ReportSuccess($"{target.Profile.GameName}: snapshot upgraded, {result.Upgraded:N0} file(s) got new details, {result.AlreadyComplete:N0} needed nothing.");
+
+                if (result.Different.Count > 0)
+                {
+                    ReportWarning($"{target.Profile.GameName}: {result.Different.Count:N0} file(s) differ from the snapshot and were left as they are in it (changed by a mod or a game update):");
+
+                    foreach (var path in result.Different.Take(20))
+                        ReportWarning("    " + path);
+                }
+
+                if (result.Missing > 0)
+                    ReportInfo($"{target.Profile.GameName}: {result.Missing:N0} file(s) of the snapshot are not in the game folder, so they got no new details.");
+
+                if (result.Links > 0)
+                    ReportWarning($"{target.Profile.GameName}: {result.Links:N0} file(s) are links (usually Vortex deployments) and got no new details. Purge the mods in Vortex and run this again.");
+
+                if (result.Unreadable > 0)
+                    ReportWarning($"{target.Profile.GameName}: {result.Unreadable:N0} file(s) could not be read (in use or access denied). Close the game and launchers and run this again.");
+
+                if (result.CannotProve > 0)
+                    ReportWarning($"{target.Profile.GameName}: {result.CannotProve:N0} file(s) have no hash in the snapshot and other timestamps on disk, so nothing proves they are the vanilla files. They got no new details; only a new snapshot of a vanilla game folder can fix them.");
+
+                if (target.Snapshot.Directories is null)
+                    ReportWarning($"{target.Profile.GameName}: this snapshot has no folder list. It cannot be added from the disk, because the folders there may come from mods; only a new snapshot of a vanilla game folder records it.");
+            });
+        }
+
         [RelayCommand]
         private async Task PreviewAsync()
         {
@@ -207,6 +269,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 var confirmed = _confirmationService.Confirm(
                     "Execute Safe Purge",
                     $"{DescribeUnregistered(plan)} not present in the baseline snapshot will be deleted from:\n{target.RootPath}\n\n"
+                    + (plan.MovedCount > 0 ? $"{plan.MovedCount:N0} vanilla file(s) found at another path will be moved back to their original path instead of being deleted.\n" : string.Empty)
                     + "For links (Vortex hardlinks/symlinks, junctions) only the link is removed; the files they point to are not touched.\n"
                     + "A Safety Backup of the other files is created first. Continue?");
 
@@ -235,6 +298,17 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
                 if (result.FoldersKept > 0)
                     ReportWarning($"{target.Profile.GameName}: {result.FoldersKept:N0} folder(s) not in the snapshot were kept because they are not empty or could not be removed (in use or access denied).");
+
+                if (result.FilesMovedBack > 0)
+                    ReportInfo($"{target.Profile.GameName}: {result.FilesMovedBack:N0} vanilla file(s) found at another path were moved back to their original path.");
+
+                if (result.FilesNotMovedBack.Count > 0)
+                {
+                    ReportWarning($"{target.Profile.GameName}: {result.FilesNotMovedBack.Count:N0} vanilla file(s) at another path could not be moved back (in use or access denied) and were left there:");
+
+                    foreach (var path in result.FilesNotMovedBack.Take(20))
+                        ReportWarning("    " + path);
+                }
             });
         }
 
@@ -443,6 +517,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             var changes = await Task.Run(() => _snapshotService.GetChangesAsync(target.RootPath, target.Snapshot, scope.CancellationToken), scope.CancellationToken);
             var folders = await Task.Run(() => _snapshotService.GetUnregisteredDirectoriesAsync(target.RootPath, target.Snapshot, scope.CancellationToken), scope.CancellationToken);
+            var relocated = await Task.Run(() => _snapshotService.FindRelocatedFilesAsync(target.RootPath, target.Snapshot, scope.CancellationToken, scope), scope.CancellationToken);
 
             // Changes also contain modified and deleted files, which a purge never touches.
             var files = changes
@@ -451,15 +526,19 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            return new PurgePlan(files, folders.OrderBy(folder => folder, StringComparer.OrdinalIgnoreCase).ToList());
+            return new PurgePlan(
+                files,
+                folders.OrderBy(folder => folder, StringComparer.OrdinalIgnoreCase).ToList(),
+                relocated.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase));
         }
 
         private static string DescribeUnregistered(PurgePlan plan)
         {
+            var count = plan.Files.Count - plan.MovedCount;
             var links = plan.Files.Count(file => file.IsLink);
             var files = links == 0
-                ? $"{plan.Files.Count:N0} unregistered file(s)"
-                : $"{plan.Files.Count:N0} unregistered entries ({links:N0} of them links)";
+                ? $"{count:N0} unregistered file(s)"
+                : $"{count:N0} unregistered entries ({links:N0} of them links)";
 
             return plan.Folders.Count == 0 ? files : $"{files} and {plan.Folders.Count:N0} folder(s)";
         }
@@ -509,14 +588,27 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         private void ShowPreview(PurgePlan plan)
         {
+            string Describe(FileMetadata file)
+            {
+                if (file.IsLink)
+                    return $"{file.RelativePath}    (link: only the link is removed)";
+
+                if (!plan.Relocated.TryGetValue(file.RelativePath, out var relocated))
+                    return file.RelativePath;
+
+                return relocated.OriginalMissing
+                    ? $"{file.RelativePath}    (vanilla file moved from {relocated.OriginalPath}: moved back)"
+                    : $"{file.RelativePath}    (copy of vanilla file {relocated.OriginalPath}: deleted)";
+            }
+
             PreviewFiles = plan.Files
-                .Select(file => file.IsLink ? $"{file.RelativePath}    (link: only the link is removed)" : file.RelativePath)
+                .Select(Describe)
                 .Concat(plan.Folders.Select(folder => $"{folder}/    (folder: removed when empty)"))
                 .ToList();
 
             PreviewSummary = plan.IsEmpty
                 ? "No unregistered files found."
-                : $"{DescribeUnregistered(plan)} would be deleted.";
+                : $"{DescribeUnregistered(plan)} would be deleted{(plan.MovedCount > 0 ? $", {plan.MovedCount:N0} moved vanilla file(s) moved back" : string.Empty)}.";
         }
 
         private void ClearPreview()
@@ -555,11 +647,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
         private void UpdateSnapshotStatus()
         {
+            var lacking = _currentSnapshot?.Data.Files.Values.Count(file => !file.IsLink && (file.Sha256 is null || file.CreationTimeUtc is null)) ?? 0;
+            var lackingText = lacking > 0 ? $" {lacking:N0} of them lack details; use Add missing details." : string.Empty;
+
             SnapshotStatus = SelectedProfile is null
                 ? "Select a profile."
                 : _currentSnapshot is null
                     ? "No baseline snapshot yet. Create one while the game folder is in a clean, vanilla state."
-                    : $"Created {_currentSnapshot.CreatedAt:g}. Contains {_currentSnapshot.Data.Files.Count:N0} files.";
+                    : $"Created {_currentSnapshot.CreatedAt:g}. Contains {_currentSnapshot.Data.Files.Count:N0} files.{lackingText}";
 
             OnPropertyChanged(nameof(HasSnapshot));
         }
@@ -569,9 +664,15 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         /// <summary>
         /// Entries not in the baseline snapshot, and the folders not in it (removed by Purge once they are empty).
         /// </summary>
-        private sealed record PurgePlan(List<FileMetadata> Files, List<string> Folders)
+        /// <param name="Relocated">Files among <paramref name="Files"/> with the content of a vanilla file, keyed by path.</param>
+        private sealed record PurgePlan(List<FileMetadata> Files, List<string> Folders, Dictionary<string, RelocatedFile> Relocated)
         {
             public bool IsEmpty => Files.Count == 0 && Folders.Count == 0;
+
+            /// <summary>
+            /// Vanilla files at another path, which Purge moves back instead of deleting.
+            /// </summary>
+            public int MovedCount => Relocated.Values.Count(file => file.OriginalMissing);
         }
     }
 }

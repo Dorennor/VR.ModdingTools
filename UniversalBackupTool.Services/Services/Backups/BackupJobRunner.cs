@@ -961,6 +961,18 @@ namespace UniversalBackupTool.Service.Services.Backups
                 if (comparison.UnverifiedFiles > 0)
                     warnings.Add($"{label}: {comparison.UnverifiedFiles:N0} file(s) with new timestamps were backed up without a content check because the snapshot has no hashes for them. Recreate the snapshot on the Vanilla & Purge page (while the game folder is vanilla) to enable content checks.");
 
+                if (comparison.UnreadableFiles > 0)
+                    warnings.Add($"{label}: {comparison.UnreadableFiles:N0} file(s) with new timestamps could not be read for a content check (in use or access denied), so they count as changed. Close the game and launchers and run the backup again.");
+
+                if (comparison.VersionChanged > 0)
+                    warnings.Add($"{label}: {comparison.VersionChanged:N0} file(s) have another file version than in the snapshot, so they count as changed. If the game was updated, the snapshot is out of date: follow the update steps with Purge tracked files and create a new snapshot.");
+
+                if (comparison.Relocated.Count > 0)
+                {
+                    warnings.Add($"{label}: {comparison.Relocated.Count:N0} file(s) at new paths have the content of a vanilla file (moved or copied). They are backed up, because a mod can rely on the new path:");
+                    warnings.AddRange(comparison.Relocated.Take(10).Select(file => $"    {file.RelativePath} = {file.OriginalPath}{(file.OriginalMissing ? " (moved)" : " (copy)")}"));
+                }
+
                 return comparison;
             }
             finally

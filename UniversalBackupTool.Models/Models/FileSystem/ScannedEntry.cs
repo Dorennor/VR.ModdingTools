@@ -15,5 +15,11 @@ namespace UniversalBackupTool.Model.Models.FileSystem
         long Length,
         DateTime LastWriteTimeUtc,
         int LinkCount,
-        string? FileId);
+        string? FileId)
+    {
+        /// <summary>
+        /// Creation time of a regular file or hardlink; null for symlinks and directory links.
+        /// </summary>
+        public DateTime? CreationTimeUtc { get; init; }
+    }
 }
