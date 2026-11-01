@@ -102,7 +102,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - `.pending` temp archives are never deleted by retention, so a discarded job's temp files stay until removed manually.
 - Safety backup retention compares UTC file times with UTC now; it previously mixed UTC and local time.
 - Paused job file: `BackupJobStateService` (DI constructor) saves to `AppStoragePaths.ActiveBackupJobFilePath`, the same path the app loads from. It writes via a temporary file and atomic replace; an unreadable job file loads as "no paused job".
-- Last checked 2026-11-01: solution build succeeded; 204 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
+- Last checked 2026-11-01: solution build succeeded; 197 NUnit tests passed (7 tests of the removed legacy `BackupEngine` were deleted). Realistic F5 testing with the user's Vortex data and large files remains necessary.
 
 ## Settled decisions — do not reopen without asking
 
@@ -166,7 +166,7 @@ Key implementation files:
   - `ViewModelTests.cs`: profile picker toggle, components off by default and kept after a backup, profiles without Vortex (editor and hidden Vortex components), operation rejection, theme save, custom paths editor;
   - `ServiceTests.cs`, `ProfileStoreTests.cs`, `SnapshotStoreTests.cs`, `PathDriveServiceTests.cs`.
 
-There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTool.Models/Models/*.cs` (root level), `UniversalBackupTool.Services/Interfaces/*.cs`, `UniversalBackupTool.Interfaces/UniversalBackupTool.Interfaces.csproj` and `UniversalBackupTool.Tests/ServiceLayerTests.cs`. `Services/Implementations/*` no longer exists. Legacy `IBackupEngine`/`BackupEngine` is still registered in DI. The UI is wired to `IBackupJobRunner`/`BackupJobRunner`. Do not delete or migrate legacy code without checking references and tests; legacy restore compatibility is intentional.
+Cleanup (2026-11-01): the empty leftover files (root-level `Models/Models/*.cs`, `Services/Interfaces/*.cs`, `Interfaces/UniversalBackupTool.Interfaces.csproj`, `Tests/ServiceLayerTests.cs`), the unused legacy `IBackupEngine`/`BackupEngine` (registered in DI but never injected) with its tests, and the `IFileSystemProvider` members only it used (`EnsureDirectoryExistsAsync`, `EnumerateFilesAsync`, `GetRelativePath`, `IsSymlink`, `ResolveActualPath`, `DeleteFileAsync`, `DeleteDirectoryAsync`) were removed. The UI uses `IBackupJobRunner`/`BackupJobRunner`. Legacy **restore** compatibility (version-1 and monolithic manifests in `RestoreService`, and the runner's monolithic path used by tests) is intentional and stays. `UI/Helpers/StackPanelSpacing.cs` is currently unused but kept as the documented spacing helper.
 
 ## Remaining work / recommended order
 
@@ -206,7 +206,7 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
 - log files, portable settings paths;
 - ViewModel behaviour.
 
-The last reported automated test run was 204 passing NUnit tests on 2026-11-01. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
+The last reported automated test run was 197 passing NUnit tests on 2026-11-01. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
 
 **Not established by those unit tests:**
 - the Output panel and cross-page operation behaviour in the real WPF app, including UI-thread marshalling under a real dispatcher;
@@ -220,7 +220,7 @@ The last reported automated test run was 204 passing NUnit tests on 2026-11-01. 
 
 Treat these as manual/integration validation, not as already verified.
 
-The legacy `IFileSystemProvider.EnumerateFilesAsync`/`IsSymlink`/`ResolveActualPath` remain only for the legacy `BackupEngine`; new code uses the scan methods.
+`IFileSystemProvider` now has only the scan methods and `DeleteEntry`.
 
 ## Constraints and implementation notes
 
@@ -235,7 +235,7 @@ The legacy `IFileSystemProvider.EnumerateFilesAsync`/`IsSymlink`/`ResolveActualP
 - Nested scrollable lists inside a page: give them a `MaxHeight`, enable virtualization (`CanContentScroll="True"` on the inner ScrollViewer) and set `helpers:NestedScrollBehavior.PassWheelAtEdges="True"`.
 - Avoid `ui:Button` in DataTemplates; a previous `PressedForeground` binding error was resolved with plain WPF `Button`. Use `helpers:StackPanelSpacing.Spacing`, not a nonexistent `ui:StackPanel`.
 - Test actual crash/restart resume of a paused backup.
-- Legacy `IBackupEngine`/`BackupEngine` remains beside newer `IBackupJobRunner`/`BackupJobRunner`; UI uses the latter. Check references before removing old code.
+- Keep legacy restore compatibility (version-1/monolithic manifests); check references and tests before removing other old code.
 - Purge deletes files and links, then the non-vanilla folders that are empty afterwards. Safety archives run before purge/restore overwrites (empty folders need none).
 - For a future code task, first inspect the exact code path and its existing tests, then implement the requested polish/fix; do not use this handoff as a reason to perform a broad audit or unrelated refactor.
 

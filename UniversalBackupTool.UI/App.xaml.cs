@@ -110,7 +110,6 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<ISnapshotService, SnapshotService>();
             services.AddSingleton<ISnapshotStore, JsonSnapshotStore>();
             services.AddSingleton<IConfirmationService, ConfirmationService>();
-            services.AddSingleton<IBackupEngine, BackupEngine>();
             services.AddSingleton<IArchiveService, ArchiveService>();
             services.AddSingleton<IIgnorePatternMatcher, IgnorePatternMatcher>();
             services.AddSingleton<IBackupJobRunner, BackupJobRunner>();

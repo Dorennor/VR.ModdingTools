@@ -8,7 +8,6 @@ using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Settings;
 using UniversalBackupTool.Model.Models.Snapshots;
 using UniversalBackupTool.Model.Models.Storage;
-using UniversalBackupTool.Service.Services.Backups;
 using UniversalBackupTool.Service.Services.Jobs;
 using UniversalBackupTool.Service.Services.Settings;
 using UniversalBackupTool.Service.Services.Snapshots;
@@ -589,85 +588,6 @@ namespace UniversalBackupTool.Tests
     }
 
     [TestFixture]
-    public class BackupEngineTests
-    {
-        [Test]
-        public async Task CreateBackupArchiveAsync_CreatesArchiveWithExpectedEntries()
-        {
-            var rootPath = TestDirectoryFactory.CreateTemporaryDirectory();
-            var fileA = Path.Combine(rootPath, "mod.txt");
-            var fileB = Path.Combine(rootPath, "nested", "data.txt");
-
-            Directory.CreateDirectory(Path.GetDirectoryName(fileB)!);
-
-            await File.WriteAllTextAsync(fileA, "keep");
-            await File.WriteAllTextAsync(fileB, "payload");
-
-            var archivePath = Path.Combine(rootPath, "archive.zip");
-            var settings = AppSettings.Default(Path.Combine(rootPath, "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(rootPath), new FakeFileSystemProvider());
-
-            var result = await engine.CreateBackupArchiveAsync(rootPath, archivePath, settings);
-
-            Assert.That(result, Is.EqualTo(archivePath));
-            Assert.That(File.Exists(archivePath), Is.True);
-
-            using var zip = ZipFile.OpenRead(archivePath);
-
-            Assert.That(zip.Entries.Select(e => e.FullName), Does.Contain("mod.txt"));
-            Assert.That(zip.Entries.Select(e => e.FullName), Does.Contain("nested/data.txt"));
-        }
-
-        [Test]
-        public async Task CreateBackupArchiveAsync_ThrowsOnEmptyPath()
-        {
-            var settings = AppSettings.Default(Path.Combine(Path.GetTempPath(), "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(Path.GetTempPath()), new FakeFileSystemProvider());
-
-            await Assert.ThrowsAsync<ArgumentException>(async () => await engine.CreateBackupArchiveAsync("", "/archive.zip", settings));
-        }
-
-        [Test]
-        public async Task ResumeBackupArchiveAsync_WithNonexistentArchive_CreatesNewArchive()
-        {
-            var rootPath = TestDirectoryFactory.CreateTemporaryDirectory();
-            var archivePath = Path.Combine(rootPath, "archive.zip");
-            var settings = AppSettings.Default(Path.Combine(rootPath, "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(rootPath), new FakeFileSystemProvider());
-
-            var file1 = Path.Combine(rootPath, "file1.txt");
-            await File.WriteAllTextAsync(file1, "content1");
-
-            var result = await engine.ResumeBackupArchiveAsync(archivePath, rootPath, settings);
-
-            Assert.That(result, Is.EqualTo(archivePath));
-            Assert.That(File.Exists(archivePath), Is.True);
-        }
-
-        [Test]
-        public async Task ResumeBackupArchiveAsync_WithEmptySourceDirectory_ReturnsPath()
-        {
-            var rootPath = TestDirectoryFactory.CreateTemporaryDirectory();
-            var archivePath = Path.Combine(rootPath, "archive.zip");
-            var settings = AppSettings.Default(Path.Combine(rootPath, "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(rootPath), new FakeFileSystemProvider());
-
-            var result = await engine.ResumeBackupArchiveAsync(archivePath, rootPath, settings);
-
-            Assert.That(result, Is.EqualTo(archivePath));
-        }
-
-        [Test]
-        public async Task ResumeBackupArchiveAsync_WithEmptyPath_Throws()
-        {
-            var settings = AppSettings.Default(Path.Combine(Path.GetTempPath(), "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(Path.GetTempPath()), new FakeFileSystemProvider());
-
-            await Assert.ThrowsAsync<ArgumentException>(async () => await engine.ResumeBackupArchiveAsync("", "/source", settings));
-        }
-    }
-
-    [TestFixture]
     public class AppStoragePathsProviderTests
     {
         [Test]
@@ -715,59 +635,6 @@ namespace UniversalBackupTool.Tests
 
     internal sealed class FakeFileSystemProvider : IFileSystemProvider
     {
-        public Task EnsureDirectoryExistsAsync(string path, CancellationToken cancellationToken = default)
-        {
-            Directory.CreateDirectory(path);
-            return Task.CompletedTask;
-        }
-
-        public Task<IEnumerable<string>> EnumerateFilesAsync(string rootPath, CancellationToken cancellationToken = default)
-        {
-            if (!Directory.Exists(rootPath))
-                return Task.FromResult<IEnumerable<string>>([]);
-
-            var files = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
-                .Where(path => !IsSymlink(path))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            return Task.FromResult<IEnumerable<string>>(files);
-        }
-
-        public string GetRelativePath(string rootPath, string filePath)
-        {
-            return Path.GetRelativePath(rootPath, filePath).Replace('\\', '/');
-        }
-
-        public bool IsSymlink(string path)
-        {
-            if (!File.Exists(path))
-                return false;
-
-            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint;
-        }
-
-        public string ResolveActualPath(string path)
-        {
-            return Path.GetFullPath(path);
-        }
-
-        public Task DeleteFileAsync(string path, CancellationToken cancellationToken = default)
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteDirectoryAsync(string path, bool recursive = true, CancellationToken cancellationToken = default)
-        {
-            if (Directory.Exists(path))
-                Directory.Delete(path, recursive);
-
-            return Task.CompletedTask;
-        }
-
         // Link handling is exercised against the real implementation.
         private static readonly UniversalBackupTool.Services.FileSystemProvider Real = new();
 
@@ -1104,42 +971,6 @@ namespace UniversalBackupTool.Tests
             await service.CleanupExpiredAsync(settings);
 
             Assert.That(File.Exists(recentFile), Is.True);
-        }
-    }
-
-    [TestFixture]
-    public class BackupEngineEdgeCasesTests
-    {
-        [Test]
-        public async Task CreateBackupArchiveAsync_WithSpecialCharactersInPaths_CreatesArchive()
-        {
-            var rootPath = TestDirectoryFactory.CreateTemporaryDirectory();
-            var specialDir = Path.Combine(rootPath, "dir-with_special.chars");
-            Directory.CreateDirectory(specialDir);
-            var filePath = Path.Combine(specialDir, "file.txt");
-            await File.WriteAllTextAsync(filePath, "content");
-
-            var archivePath = Path.Combine(rootPath, "archive.zip");
-            var settings = AppSettings.Default(Path.Combine(rootPath, "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(rootPath), new FakeFileSystemProvider());
-
-            var result = await engine.CreateBackupArchiveAsync(rootPath, archivePath, settings);
-
-            Assert.That(File.Exists(result), Is.True);
-        }
-
-        [Test]
-        public async Task CreateBackupArchiveAsync_WithNonexistentSourcePath_StillCreatesArchive()
-        {
-            var rootPath = TestDirectoryFactory.CreateTemporaryDirectory();
-            var nonexistentSource = Path.Combine(rootPath, "nonexistent");
-            var archivePath = Path.Combine(rootPath, "archive.zip");
-            var settings = AppSettings.Default(Path.Combine(rootPath, "backups"));
-            var engine = new BackupEngine(new FakeStoragePathsProvider(rootPath), new FakeFileSystemProvider());
-
-            var result = await engine.CreateBackupArchiveAsync(nonexistentSource, archivePath, settings);
-
-            Assert.That(result, Is.EqualTo(archivePath));
         }
     }
 

@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="UniversalBackupTool.Interfaces.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\UniversalBackupTool.Models\UniversalBackupTool.Model.csproj" />
   </ItemGroup>
 
