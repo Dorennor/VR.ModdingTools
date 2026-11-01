@@ -101,7 +101,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
                     Profiles.Clear();
 
-                    foreach (var profile in profiles.Where(profile => !string.IsNullOrWhiteSpace(profile.GameRootPath)))
+                    foreach (var profile in profiles
+                                 .Where(profile => !string.IsNullOrWhiteSpace(profile.GameRootPath))
+                                 .OrderBy(profile => profile.GameName, StringComparer.CurrentCultureIgnoreCase))
                         Profiles.Add(new ProfileItemViewModel(profile));
 
                     OnPropertyChanged(nameof(HasNoProfiles));

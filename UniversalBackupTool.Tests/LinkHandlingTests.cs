@@ -234,6 +234,57 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Backup_ChangedGameFiles_ArchivesDeployedLinksWithRealContent_InOneArchive_ConfigsLeaveThemOut()
+        {
+            var stagingFile = Write(Path.Combine(_staging, "mod", "plugin.esp"), "mod data");
+            Write(Path.Combine(_outside, "textures", "a.dds"), "texture");
+            Write(Path.Combine(_game, "game.exe"), "vanilla");
+
+            var paths = new FakeStoragePathsProvider(Path.Combine(_root, "app"));
+            var snapshotService = new SnapshotService(_fileSystem, new FakeSafetyBackupService());
+            var profile = new BackupProfile { GameName = "Links", GameRootPath = _game };
+            await new JsonSnapshotStore().SaveAsync(paths.GetPaths().SnapshotsDirectory, await snapshotService.CreateSnapshotAsync(profile.Id, _game));
+
+            HardLink(Path.Combine(_game, "Data", "plugin.esp"), stagingFile);
+            Junction(Path.Combine(_game, "Data", "Textures"), _outside);
+            Write(Path.Combine(_game, "user.ini"), "config");
+
+            var runner = new BackupJobRunner(
+                new ArchiveService(),
+                _fileSystem,
+                snapshotService,
+                new JsonSnapshotStore(),
+                new IgnorePatternMatcher(),
+                new FakeJobStateService(),
+                paths);
+            var restore = new RestoreService(new FakeSafetyBackupService());
+            var options = new BackupOptions(false, true, false, false, IncludeGameChanges: true);
+
+            var batch = await runner.RunBackupAsync([profile], options, AppSettings.Default(Path.Combine(_root, "drive")));
+
+            async Task<(List<string> Entries, string? Plugin)> ReadAsync(BackupComponent component)
+            {
+                var result = batch.Results.Single(candidate => Path.GetFileName(Path.GetDirectoryName(candidate.BackupDirectory)) == (component == BackupComponent.GameChanges ? "changes" : "configs"));
+                var unit = (await restore.ReadManifestAsync(result.BackupDirectory))!.Units.Single();
+                using var zip = ZipFile.OpenRead(Path.Combine(result.BackupDirectory, unit.ArchiveRootRelativePath, unit.ArchiveFile));
+                var plugin = zip.GetEntry("Data/plugin.esp") is { } entry ? new StreamReader(entry.Open()).ReadToEnd() : null;
+                return (zip.Entries.Select(entry => entry.FullName).ToList(), plugin);
+            }
+
+            var changes = await ReadAsync(BackupComponent.GameChanges);
+            var configs = await ReadAsync(BackupComponent.GameConfigs);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(changes.Entries, Is.EquivalentTo(new[] { "Data/plugin.esp", "Data/Textures/textures/a.dds", "user.ini" }));
+                Assert.That(changes.Plugin, Is.EqualTo("mod data"), "the hardlink's real content is archived");
+                Assert.That(configs.Entries, Is.EquivalentTo(new[] { "user.ini" }));
+                Assert.That(batch.Results.SelectMany(result => result.Warnings).Where(warning => warning.StartsWith("Changed game files", StringComparison.Ordinal)), Is.Empty,
+                    "nothing is skipped from changed game files");
+            });
+        }
+
+        [Test]
         public async Task Backup_CustomPaths_ArchivesSymlinkTargetBytes_SingleFiles_AndRestoresThem()
         {
             var appRoot = Path.Combine(_root, "app");

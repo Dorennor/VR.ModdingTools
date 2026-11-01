@@ -10,6 +10,7 @@ using UniversalBackupTool.Interface.Interfaces.Jobs;
 using UniversalBackupTool.Interfaces.Snapshots;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Backups;
+using UniversalBackupTool.Model.Models.FileSystem;
 using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Settings;
@@ -697,8 +698,9 @@ namespace UniversalBackupTool.Service.Services.Backups
         /// Game folder files that differ from the baseline snapshot. Game configs (<paramref name="includeModified"/> false)
         /// take only files the snapshot does not list, the same set the purge preview shows: a reinstall or file
         /// verification rewrites every vanilla file with new timestamps, which must not turn the whole game into "configs".
-        /// Changed game files (<paramref name="includeModified"/> true) also take vanilla files whose size, time or kind
-        /// differ from the snapshot.
+        /// Changed game files (<paramref name="includeModified"/> true) also take vanilla files whose content differs from
+        /// the snapshot, and are a complete copy: linked entries (Vortex deployments) are archived with their real content.
+        /// Game configs leave links out.
         /// </summary>
         private async Task<List<SourceFile>?> CollectGameFolderChangesAsync(
             BackupProfile profile,
@@ -748,19 +750,47 @@ namespace UniversalBackupTool.Service.Services.Backups
                 ? comparison.Changes.Values.ToList()
                 : comparison.Changes.Where(change => !baseline.Data.Files.ContainsKey(change.Key)).Select(change => change.Value).ToList();
 
-            // Links in the game folder are Vortex deployments (hardlinks/symlinks to staging); their data is already in
-            // the staging backup, so only real files are candidates.
-            var linkedChanges = changes.Count(change => change.IsLink);
+            var files = new List<SourceFile>();
 
-            if (linkedChanges > 0)
-                warnings.Add($"{label}: {linkedChanges:N0} linked file(s) in the game folder (Vortex deployments) were skipped; their data is part of the staging backup.");
+            foreach (var change in changes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            // Changes also contain files deleted since the snapshot, which there is nothing to archive for.
-            return changes
-                .Where(change => !change.IsLink)
-                .Select(change => change.RelativePath)
-                .Select(relative => new SourceFile(Path.Combine(rootPath, relative.Replace('/', Path.DirectorySeparatorChar)), relative.Replace('\\', '/')))
-                .Where(file => File.Exists(file.FullPath) && !filter.IsIgnored(file.RelativePath))
+                var relative = change.RelativePath.Replace('\\', '/');
+                var fullPath = Path.Combine(rootPath, relative.Replace('/', Path.DirectorySeparatorChar));
+
+                if (change.Kind == FileEntryKind.DirectoryLink)
+                {
+                    // Changed game files are a complete copy of everything that differs from vanilla, so a linked folder
+                    // (Vortex junction or symlink) is archived with its real contents. Game configs leave links out:
+                    // they are mod deployments, whose data the staging backup holds.
+                    if (!includeModified || !Directory.Exists(fullPath))
+                        continue;
+
+                    var scan = await Task.Run(() => _fileSystemProvider.ScanFollowingLinks(fullPath, cancellationToken), cancellationToken);
+                    warnings.AddRange(scan.Warnings.Select(warning => $"{label}: {warning}"));
+                    files.AddRange(scan.Files.Select(file => new SourceFile(file.FullPath, relative + "/" + file.RelativePath)));
+                    continue;
+                }
+
+                // Changes also contain files deleted since the snapshot, which there is nothing to archive for. Linked
+                // files (hardlinks, symlinks) are read through the link, so their real content is archived.
+                if ((change.IsLink && !includeModified) || !File.Exists(fullPath))
+                    continue;
+
+                files.Add(new SourceFile(fullPath, relative));
+            }
+
+            if (!includeModified)
+            {
+                var linkedChanges = changes.Count(change => change.IsLink);
+
+                if (linkedChanges > 0)
+                    warnings.Add($"{label}: {linkedChanges:N0} linked entr(ies) in the game folder (Vortex deployments) were left out of the configs; their data is part of the staging backup. Changed game files include them.");
+            }
+
+            return files
+                .Where(file => !filter.IsIgnored(file.RelativePath))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

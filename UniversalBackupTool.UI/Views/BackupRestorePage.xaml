@@ -177,7 +177,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Every file in the game folder that differs from the vanilla snapshot: new files and modified vanilla files. After a reinstall or file verification this can be the whole game."
+                    Description="Everything in the game folder that differs from the vanilla snapshot, in one archive: new files, configs, modified vanilla files and deployed mod files (with their real content)."
                     Header="Changed game files"
                     Icon="{ui:SymbolIcon DocumentEdit24}">
                     <ui:ToggleSwitch

@@ -173,13 +173,28 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
-        public async Task FinishedBackup_ResetsGamesAndComponentsToDefaults()
+        public async Task Components_AreAllOffByDefault()
+        {
+            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.IncludeStaging, Is.False);
+                Assert.That(viewModel.IncludeGameConfigs, Is.False);
+                Assert.That(viewModel.IncludeGameChanges, Is.False);
+                Assert.That(viewModel.IncludeVortexAppData, Is.False);
+                Assert.That(viewModel.IncludeCustomFolders, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task FinishedBackup_DeselectsGames_AndKeepsComponentToggles()
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
             viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.IncludeStaging = true;
             viewModel.IncludeGameConfigs = true;
             viewModel.IncludeCustomFolders = true;
-            viewModel.IncludeVortexAppData = false;
 
             await viewModel.StartBackupCommand.ExecuteAsync(null);
 
@@ -189,9 +204,9 @@ namespace UniversalBackupTool.Tests
                 Assert.That(_runner.LastOptions, Is.EqualTo(new BackupOptions(true, true, false, true)));
                 Assert.That(viewModel.Targets.Any(target => target.IsSelected), Is.False);
                 Assert.That(viewModel.IncludeStaging, Is.True);
-                Assert.That(viewModel.IncludeVortexAppData, Is.True);
-                Assert.That(viewModel.IncludeGameConfigs, Is.False);
-                Assert.That(viewModel.IncludeCustomFolders, Is.False);
+                Assert.That(viewModel.IncludeGameConfigs, Is.True);
+                Assert.That(viewModel.IncludeCustomFolders, Is.True);
+                Assert.That(viewModel.IncludeVortexAppData, Is.False);
             });
         }
 
@@ -218,6 +233,7 @@ namespace UniversalBackupTool.Tests
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim");
             viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.IncludeStaging = true;
 
             using (_coordinator.TryBegin("Purge"))
             {

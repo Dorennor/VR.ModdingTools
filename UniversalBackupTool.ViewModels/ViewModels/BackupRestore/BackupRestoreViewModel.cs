@@ -126,20 +126,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 target.IsSelected = false;
         }
 
-        /// <summary>
-        /// After a finished backup: no games selected, components back to the defaults (staging and Vortex AppData).
-        /// </summary>
-        private void ResetBackupSelection()
-        {
-            ClearTargetSelection();
-
-            IncludeStaging = true;
-            IncludeGameConfigs = false;
-            IncludeGameChanges = false;
-            IncludeVortexAppData = true;
-            IncludeCustomFolders = false;
-        }
-
         private void OnTargetPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(BackupTargetItemViewModel.IsSelected))
@@ -186,7 +172,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             : $"A previous backup ({Path.GetFileName(PausedJob.ArchivePath)}) is incomplete. Files that were in use: {PausedJob.FailedFiles.Count}. Close the game and Vortex, then resume.";
 
         [ObservableProperty]
-        private bool _includeStaging = true;
+        private bool _includeStaging;
 
         [ObservableProperty]
         private bool _includeGameConfigs;
@@ -195,7 +181,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private bool _includeGameChanges;
 
         [ObservableProperty]
-        private bool _includeVortexAppData = true;
+        private bool _includeVortexAppData;
 
         [ObservableProperty]
         private bool _includeCustomFolders;
@@ -364,9 +350,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 await ReloadPausedJobAsync();
                 ReportBackupResult(batch, settings);
 
-                // Only after the backup ran to the end (also when some files were locked and Continue Backup is offered).
-                // A cancelled or failed backup keeps the selection so it can be retried.
-                ResetBackupSelection();
+                // Only the games are deselected, after the backup ran to the end (also when some files were locked and
+                // Continue Backup is offered); the component toggles stay as they are. A cancelled or failed backup keeps
+                // the games selected so it can be retried.
+                ClearTargetSelection();
             });
         }
 

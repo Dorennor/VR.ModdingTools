@@ -441,7 +441,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         {
             Profiles.Clear();
 
-            foreach (var profile in profiles)
+            foreach (var profile in profiles.OrderBy(profile => profile.GameName, StringComparer.CurrentCultureIgnoreCase))
                 Profiles.Add(new ProfileItemViewModel(profile));
 
             OnPropertyChanged(nameof(HasNoProfiles));
