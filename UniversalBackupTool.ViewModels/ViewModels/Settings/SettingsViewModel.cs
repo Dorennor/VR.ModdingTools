@@ -102,6 +102,24 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         [ObservableProperty]
         private string _globalIgnorePatternsText = string.Empty;
 
+        /// <summary>
+        /// One extension per line; see <see cref="AppSettings.NoCompressionExtensions"/>.
+        /// </summary>
+        [ObservableProperty]
+        private string _noCompressionExtensionsText = string.Empty;
+
+        /// <summary>
+        /// <see cref="AppSettings.StoreComponentsLargerThanBytes"/> in GB; 0 turns the rule off.
+        /// </summary>
+        [ObservableProperty]
+        private double _storeComponentsLargerThanGigabytes;
+
+        [ObservableProperty]
+        private double _parallelArchives = AppSettings.DefaultParallelArchives;
+
+        public string ParallelArchivesDescription =>
+            $"Mods (and custom paths) archived in parallel. Compression uses one CPU core per archive. This PC has {AppSettings.DefaultParallelArchives} logical cores, the default. Lower it if the mods are on a hard disk (HDD).";
+
         public ObservableCollection<CompressionRuleViewModel> CompressionRules { get; } = [];
 
         [RelayCommand]
@@ -138,7 +156,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                                             .Select(rule => rule.ToModel())
                                             .OrderBy(rule => rule.MaxSizeBytes)
                                             .ToList(),
-                                        GlobalIgnorePatterns = ParseIgnorePatterns(GlobalIgnorePatternsText)
+                                        GlobalIgnorePatterns = ParseIgnorePatterns(GlobalIgnorePatternsText),
+                                        NoCompressionExtensions = ParseExtensions(NoCompressionExtensionsText),
+                                        StoreComponentsLargerThanBytes = (long)Math.Round(StoreComponentsLargerThanGigabytes * 1024 * 1024 * 1024),
+                                        ParallelArchives = (int)ParallelArchives
                                     };
 
                                     var paths = _storagePathsProvider.GetPaths();
@@ -223,6 +244,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             SafetyBackupRetentionDays = settings.SafetyBackupRetentionDays;
             MaxPreservedBackupsPerGame = settings.MaxPreservedBackupsPerGame;
             GlobalIgnorePatternsText = string.Join(Environment.NewLine, settings.GlobalIgnorePatterns);
+            NoCompressionExtensionsText = string.Join(Environment.NewLine, settings.NoCompressionExtensions);
+            StoreComponentsLargerThanGigabytes = Math.Round(settings.StoreComponentsLargerThanBytes / (1024.0 * 1024 * 1024), 1);
+            ParallelArchives = settings.EffectiveParallelArchives;
 
             CompressionRules.Clear();
 
@@ -247,6 +271,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             if (MaxPreservedBackupsPerGame < 1 || MaxPreservedBackupsPerGame != Math.Floor(MaxPreservedBackupsPerGame))
                 return "Max preserved backups per game must be a whole number, at least 1.";
 
+            if (ParallelArchives < 1 || ParallelArchives > 256 || ParallelArchives != Math.Floor(ParallelArchives))
+                return "Archives written at the same time must be a whole number from 1 to 256.";
+
+            if (StoreComponentsLargerThanGigabytes < 0 || double.IsNaN(StoreComponentsLargerThanGigabytes))
+                return "The size limit for storing large components without compression must be 0 (off) or more.";
+
             var limitedRules = CompressionRules.Where(rule => !rule.IsUnlimited).ToList();
 
             if (limitedRules.Any(rule => rule.MaxSizeMegabytes <= 0))
@@ -262,6 +292,19 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         {
             return text
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// One extension per line, also separated by commas or spaces; "ba2", "*.ba2" and ".BA2" are saved as ".ba2".
+        /// </summary>
+        private static List<string> ParseExtensions(string text)
+        {
+            return text
+                .Split(['\r', '\n', ',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(AppSettings.NormalizeExtension)
+                .Where(extension => extension.Length > 1)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

@@ -54,6 +54,10 @@ namespace UniversalBackupTool.Service.Services.Settings
                 if (settings.DefaultsVersion < AppSettings.GlobalVortexAppDataVersion && string.IsNullOrWhiteSpace(settings.VortexAppDataPath))
                     settings = settings with { VortexAppDataPath = await FindProfileVortexAppDataPathAsync(baseDirectory, cancellationToken) ?? AppSettings.DefaultVortexAppDataPath };
 
+                // Parallel archiving starts at the number of CPU cores of this PC.
+                if (settings.DefaultsVersion < AppSettings.ParallelArchivesVersion && settings.ParallelArchives < 1)
+                    settings = settings with { ParallelArchives = AppSettings.DefaultParallelArchives };
+
                 settings = AddNewDefaults(settings);
                 await SaveAsync(filePath, settings, cancellationToken);
             }
@@ -133,9 +137,21 @@ namespace UniversalBackupTool.Service.Services.Settings
                     patterns.Add(pattern);
             }
 
+            var extensions = settings.NoCompressionExtensions.ToList();
+            var newExtensions = AppSettings.VersionedDefaultNoCompressionExtensions
+                .Where(item => item.SinceVersion > settings.DefaultsVersion)
+                .Select(item => item.Extension);
+
+            foreach (var extension in newExtensions)
+            {
+                if (!extensions.Any(existing => string.Equals(AppSettings.NormalizeExtension(existing), extension, StringComparison.OrdinalIgnoreCase)))
+                    extensions.Add(extension);
+            }
+
             return settings with
             {
                 GlobalIgnorePatterns = patterns,
+                NoCompressionExtensions = extensions,
                 DefaultsVersion = AppSettings.CurrentDefaultsVersion
             };
         }

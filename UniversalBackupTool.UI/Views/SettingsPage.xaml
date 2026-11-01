@@ -205,6 +205,61 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <controls:SettingsCard
+                    Description="File types that are compressed already (archives, BA2, audio, video, images). They are always stored without compression, whatever their size: compressing them costs time and saves almost nothing. One extension per line, for example .ba2."
+                    Header="File types stored without compression"
+                    Icon="{ui:SymbolIcon DocumentArrowRight24}"
+                    IsStacked="True">
+                    <ui:TextBox
+                        Height="120"
+                        AcceptsReturn="True"
+                        FontFamily="{StaticResource MonospaceFontFamily}"
+                        FontSize="13"
+                        Text="{Binding NoCompressionExtensionsText, UpdateSourceTrigger=PropertyChanged}"
+                        TextWrapping="NoWrap"
+                        VerticalScrollBarVisibility="Auto" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="When all files of one backup component of a game together are larger than this (for staging: the whole modpack), every file is stored without compression. 0 turns this off."
+                    Header="Store large components without compression"
+                    Icon="{ui:SymbolIcon Box24}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:NumberBox
+                            Width="110"
+                            MaxDecimalPlaces="1"
+                            Minimum="0"
+                            SpinButtonPlacementMode="Hidden"
+                            Value="{Binding StoreComponentsLargerThanGigabytes, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock
+                            Width="70"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="GB" />
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="{Binding ParallelArchivesDescription}"
+                    Header="Archives written at the same time"
+                    Icon="{ui:SymbolIcon Flash24}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:NumberBox
+                            Width="110"
+                            MaxDecimalPlaces="0"
+                            Minimum="1"
+                            SpinButtonPlacementMode="Hidden"
+                            Value="{Binding ParallelArchives, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock
+                            Width="70"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="archives" />
+                    </StackPanel>
+                </controls:SettingsCard>
+
                 <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Retention" />
 
                 <controls:SettingsCard

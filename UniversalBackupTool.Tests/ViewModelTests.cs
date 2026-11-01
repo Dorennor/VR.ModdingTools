@@ -303,6 +303,42 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Settings_CompressionSpeedFields_AreLoadedValidatedAndSaved()
+        {
+            var store = new JsonSettingsStore();
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")));
+
+            var viewModel = new SettingsViewModel(store, _paths, _dialogs, new FakeThemeService(), _coordinator, _output);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.ParallelArchives, Is.EqualTo(Environment.ProcessorCount));
+                Assert.That(viewModel.StoreComponentsLargerThanGigabytes, Is.Zero);
+                Assert.That(viewModel.NoCompressionExtensionsText, Does.Contain(".ba2"));
+                Assert.That(viewModel.ParallelArchivesDescription, Does.Contain(Environment.ProcessorCount.ToString()));
+            });
+
+            viewModel.ParallelArchives = 0;
+            await viewModel.SaveCommand.ExecuteAsync(null);
+            Assert.That(_output.Entries.Any(entry => entry.Severity == OutputSeverity.Error && entry.Message.Contains("Archives written at the same time")), Is.True);
+
+            viewModel.ParallelArchives = 12;
+            viewModel.StoreComponentsLargerThanGigabytes = 3;
+            viewModel.NoCompressionExtensionsText = "BA2, *.pak\r\n.zip\r\n\r\n.ba2";
+            await viewModel.SaveCommand.ExecuteAsync(null);
+            var saved = await store.LoadAsync(settingsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(saved.ParallelArchives, Is.EqualTo(12));
+                Assert.That(saved.StoreComponentsLargerThanBytes, Is.EqualTo(3L * 1024 * 1024 * 1024));
+                Assert.That(saved.NoCompressionExtensions, Is.EqualTo(new[] { ".ba2", ".pak", ".zip" }));
+            });
+        }
+
+        [Test]
         public async Task Backup_WithVortexAppData_AsksFirst_WhenVortexIsRunning()
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim");

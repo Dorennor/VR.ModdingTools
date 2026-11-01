@@ -140,7 +140,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             var readFailed = false;
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var length = input.Length;
-            var level = GetCompressionLevel(length, settings);
+            var level = GetCompressionLevel(item.SourcePath, length, settings);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             _log?.AppendDetail(Invariant($"Archiving: {item.SourcePath} ({FormatSize(length)}, level {level})"));
@@ -219,8 +219,14 @@ namespace UniversalBackupTool.Service.Services.Backups
             return unit == 0 ? Invariant($"{bytes} B") : Invariant($"{value:0.0} {units[unit]}");
         }
 
-        private static CompressionLevel GetCompressionLevel(long fileLength, AppSettings settings)
+        /// <summary>
+        /// Types that are compressed already are stored; otherwise the smallest size rule the file fits decides.
+        /// </summary>
+        private static CompressionLevel GetCompressionLevel(string path, long fileLength, AppSettings settings)
         {
+            if (settings.IsNoCompressionFile(path))
+                return CompressionLevel.NoCompression;
+
             var matchedRule = settings.CompressionRules
                 .OrderBy(rule => rule.MaxSizeBytes)
                 .FirstOrDefault(rule => fileLength <= rule.MaxSizeBytes);

@@ -416,15 +416,48 @@ namespace UniversalBackupTool.Service.Services.Backups
             var tracker = new ProgressTracker($"{progressLabel}: archiving changes", totalBytes, writePlans.Sum(plan => plan.Unit.Files.Count), progress);
             var modsArchived = 0;
             var modsReused = 0;
+            var archiveSettings = ApplyComponentSizeRule(settings, units, profile, component, warnings);
             var backupDirectory = CreateBackupDirectory(componentRootDirectory);
+
+            // Each archive to write gets its temporary path up front, so they can be written in parallel and cleaned up
+            // together if anything fails.
+            var temporaryPaths = new string?[plans.Count];
+            var archiveResults = new ArchiveWriteResult?[plans.Count];
+
+            for (var index = 0; index < plans.Count; index++)
+            {
+                if (!plans[index].IsPreviousReuse)
+                {
+                    temporaryPaths[index] = plans[index].FinalArchivePath + $".{Guid.NewGuid():N}.pending";
+                    temporaryArchives.Add(temporaryPaths[index]!);
+                }
+            }
 
             try
             {
                 Directory.CreateDirectory(archiveRoot);
 
-                foreach (var plan in plans)
+                // Compression runs on one core per archive, so several archives (mods) are written at the same time.
+                // The largest start first, so a big mod does not end up running alone at the end.
+                var writeOrder = Enumerable.Range(0, plans.Count)
+                    .Where(index => !plans[index].IsPreviousReuse)
+                    .OrderByDescending(index => plans[index].Unit.Files.Sum(file => GetLength(file.SourcePath)))
+                    .ToList();
+                var parallelOptions = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Math.Max(1, settings.EffectiveParallelArchives),
+                    CancellationToken = cancellationToken
+                };
+
+                await Parallel.ForEachAsync(writeOrder, parallelOptions, async (index, token) =>
+                {
+                    archiveResults[index] = await _archiveService.CreateArchiveAsync(temporaryPaths[index]!, plans[index].Unit.Files, archiveSettings, tracker, token);
+                });
+
+                for (var index = 0; index < plans.Count; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    var plan = plans[index];
                     var unit = plan.Unit;
 
                     if (unit.Manifest.Component == BackupComponent.StagingFolders && plan.IsPreviousReuse)
@@ -443,9 +476,8 @@ namespace UniversalBackupTool.Service.Services.Backups
                         continue;
                     }
 
-                    var temporaryPath = plan.FinalArchivePath + $".{Guid.NewGuid():N}.pending";
-                    temporaryArchives.Add(temporaryPath);
-                    var archiveResult = await _archiveService.CreateArchiveAsync(temporaryPath, unit.Files, settings, tracker, cancellationToken);
+                    var temporaryPath = temporaryPaths[index]!;
+                    var archiveResult = archiveResults[index]!;
                     var filesWithHashes = AttachHashes(plan.Files, unit.Files, archiveResult.FileHashes);
                     var hashesMatchPrevious = plan.PreviousUnit is not null
                         && FileContentsMatch(plan.PreviousUnit.FileFingerprints, filesWithHashes)
@@ -572,6 +604,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var component = units[0].Manifest.Component;
             var componentRootDirectory = GetComponentRootDirectory(settings.GoogleDriveBackupPath, profile, component);
+            var archiveSettings = ApplyComponentSizeRule(settings, units, profile, component, warnings);
             var backupDirectory = CreateBackupDirectory(componentRootDirectory);
 
             try
@@ -588,7 +621,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                     var archivePath = Path.Combine(backupDirectory, archiveGroup.Key.Replace('/', Path.DirectorySeparatorChar));
                     var items = archiveGroup.SelectMany(unit => unit.Files).ToList();
-                    var result = await _archiveService.CreateArchiveAsync(archivePath, items, settings, tracker, cancellationToken);
+                    var result = await _archiveService.CreateArchiveAsync(archivePath, items, archiveSettings, tracker, cancellationToken);
 
                     archived += result.FilesWritten;
                     failedFiles.AddRange(result.Failed.Select(item => new FailedBackupFile(archivePath, item.EntryName, item.SourcePath)));
@@ -1333,6 +1366,35 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         /// <summary>
+        /// The settings the archives of one component are written with: when all its source files together (for staging
+        /// the whole modpack, not only the mods that changed) are larger than
+        /// <see cref="AppSettings.StoreComponentsLargerThanBytes"/>, every file is stored without compression. The total
+        /// of the source folder keeps the decision stable from run to run. Archives reused from earlier runs keep whatever
+        /// compression they have.
+        /// </summary>
+        private static AppSettings ApplyComponentSizeRule(
+            AppSettings settings,
+            IReadOnlyList<UnitPlan> units,
+            BackupProfile profile,
+            BackupComponent component,
+            List<string> warnings)
+        {
+            if (settings.StoreComponentsLargerThanBytes <= 0)
+                return settings;
+
+            var componentBytes = units.Sum(unit => unit.Files.Sum(file => GetLength(file.SourcePath)));
+
+            if (componentBytes <= settings.StoreComponentsLargerThanBytes)
+                return settings;
+
+            var name = VortexAppDataBackup.IsSharedBackup(profile.Id) ? VortexAppDataBackup.DisplayName : $"{profile.GameName} ({BackupLocations.GetComponentFolderName(component)})";
+            warnings.Add(FormattableString.Invariant(
+                $"{name}: {componentBytes / 1073741824.0:0.0} GB is above the {settings.StoreComponentsLargerThanBytes / 1073741824.0:0.##} GB limit in Settings, so new archives were stored without compression."));
+
+            return settings with { CompressionRules = [new CompressionRule(long.MaxValue, System.IO.Compression.CompressionLevel.NoCompression)] };
+        }
+
+        /// <summary>
         /// The component folder (see <see cref="BackupLocations.GetComponentDirectory"/>), created when missing.
         /// </summary>
         private static string GetComponentRootDirectory(string backupRoot, BackupProfile profile, BackupComponent component)
@@ -1522,17 +1584,23 @@ namespace UniversalBackupTool.Service.Services.Backups
                 Report();
             }
 
+            // Several archives are written at the same time and all report here.
+            private readonly Lock _gate = new();
+
             public void Report(ArchiveProgress value)
             {
-                _bytes += value.BytesDelta;
-                _current = value.CurrentFile;
+                lock (_gate)
+                {
+                    _bytes += value.BytesDelta;
+                    _current = value.CurrentFile;
 
-                if (value.FileCompleted)
-                    _files++;
+                    if (value.FileCompleted)
+                        _files++;
 
-                // Large files report per buffer, so throttle to keep the UI responsive.
-                if (value.FileCompleted || _stopwatch.ElapsedMilliseconds - _lastReportMilliseconds >= 100)
-                    Report();
+                    // Large files report per buffer and many archives report at once, so throttle to keep the UI responsive.
+                    if (_stopwatch.ElapsedMilliseconds - _lastReportMilliseconds >= 100)
+                        Report();
+                }
             }
 
             public void Finish()

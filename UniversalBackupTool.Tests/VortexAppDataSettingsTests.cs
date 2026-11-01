@@ -96,7 +96,9 @@ namespace UniversalBackupTool.Tests
                 Assert.That(migrated.CompressionRules, Has.Count.EqualTo(4));
                 Assert.That(migrated.MaxPreservedBackupsPerGame, Is.EqualTo(3));
                 Assert.That(reloaded.VortexAppDataPath, Is.EqualTo(@"D:\Custom\Vortex"), "the upgrade is saved");
-                Assert.That(File.ReadAllText(_settingsPath), Does.Contain("\"DefaultsVersion\": 3"));
+                Assert.That(File.ReadAllText(_settingsPath), Does.Contain($"\"DefaultsVersion\": {AppSettings.CurrentDefaultsVersion}"));
+                Assert.That(migrated.NoCompressionExtensions, Is.EqualTo(AppSettings.DefaultNoCompressionExtensions), "compression speed defaults are added too");
+                Assert.That(migrated.ParallelArchives, Is.EqualTo(Environment.ProcessorCount));
                 Assert.That(File.ReadAllText(_profilesPath), Is.EqualTo(VersionTwoProfiles), "profiles.json is not rewritten by the upgrade");
             });
         }
