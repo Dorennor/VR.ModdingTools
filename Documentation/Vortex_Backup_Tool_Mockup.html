@@ -299,15 +299,15 @@
                 <div class="card-header">
                     <span class="card-title">Select Target Profile</span>
                     <select style="width: 250px;">
-                        <option>Skyrim Special Edition</option>
                         <option>Cyberpunk 2077</option>
+                        <option>Skyrim Special Edition</option>
                     </select>
                 </div>
 
                 <div style="margin-top: 25px;">
                     <h4>Baseline Snapshot</h4>
                     <p style="color: var(--text-muted); font-size: 13px;">Status: Valid. Created 2 days ago. Contains
-                        14,203 files.</p>
+                        14,203 files (with content hashes and the folder list).</p>
                     <button>📷 Create / Update Snapshot</button>
                 </div>
 
@@ -317,7 +317,7 @@
                     <h4 style="color: var(--danger);">Purge Mod Files</h4>
                     <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
                         Compares Game Root against Baseline Snapshot. Deletes any unregistered files (configs, logs,
-                        manual mods).<br>
+                        manual mods) and the folders that are not in the snapshot once they are empty.<br>
                         <strong>A Safety Backup will be created before deletion.</strong>
                     </p>
                     <button class="danger">⚠️ Execute Safe Purge</button>
@@ -341,17 +341,18 @@
                 <div style="display: flex; gap: 40px; margin-bottom: 25px;">
                     <div style="flex: 1;">
                         <h4 style="margin-top: 0;">Target Profiles</h4>
-                        <label style="margin-bottom: 8px;"><input type="checkbox"> Skyrim Special
-                            Edition</label>
                         <label style="margin-bottom: 8px;"><input type="checkbox"> Cyberpunk 2077</label>
                         <label style="margin-bottom: 8px;"><input type="checkbox"> Elder Scrolls Online</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Skyrim Special
+                            Edition</label>
                     </div>
                     <div style="flex: 1;">
                         <h4 style="margin-top: 0;">Components to Backup</h4>
                         <p style="color: var(--text-muted); font-size: 13px;">Incremental snapshots reuse unchanged mod archives from the game's shared _archives folder.</p>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Staging Folders (per-mod incremental archives)</label>
-                        <label style="margin-bottom: 8px;"><input type="checkbox"> Game Configs (Diff vs Snapshot)</label>
-                        <label style="margin-bottom: 8px;"><input type="checkbox" checked> Vortex AppData (Roaming)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Staging Folders (per-mod incremental archives)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Game Configs (new files vs Snapshot)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Changed Game Files (all differences, one archive)</label>
+                        <label style="margin-bottom: 8px;"><input type="checkbox"> Vortex AppData (Roaming)</label>
                         <label style="margin-bottom: 8px;"><input type="checkbox"> Custom Folders</label>
                     </div>
                 </div>

@@ -1,6 +1,6 @@
 # Vortex Backup Tool - Current Implementation and Handoff
 
-Updated 2026-10-31. This is the current source of truth for a new Copilot chat. Other files in Documentation contain original rationale, human plans and an illustrative mockup. The user runs the app with Visual Studio F5; do not launch or automate it.
+Updated 2026-11-01. This is the current source of truth for a new Copilot chat. Other files in Documentation contain original rationale, human plans and an illustrative mockup. The user runs the app with Visual Studio F5; do not launch or automate it.
 
 This is a project handoff, not a verbatim transcript. It captures the important decisions and current state so work can continue without rediscovering or reimplementing completed features. The repository code and tests are authoritative if they differ from this document. Start by checking the worktree and the requested issue; do not replace the architecture or redo completed items below. The project is now in the **polish, finish remaining small functionality, and debug/validate** phase—not a fresh implementation or redesign phase. Keep changes surgical, preserve unrelated work, and run the narrowest relevant tests/build.
 
@@ -17,6 +17,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Theme: `AppSettings.Theme` (`AppTheme` System/Light/Dark, default System) is applied at startup via `IThemeService` (`UI/Services/ThemeService.cs`, WPF-UI `ApplicationThemeManager`/`SystemThemeWatcher`). The Settings "App theme" row applies and saves it immediately; it is not part of the Save button.
 - Settings page: app theme, backup destination, safety backups, compression rules, retention and global ignore patterns.
 - Profiles page (`DashboardPage`, nav label "Profiles"): JSON profiles, editable paths, new-profile default `%APPDATA%\Vortex`, per-path drive swap and Find on other disk. No global drive-letter rewrite.
+- Every game list is sorted by game name (current culture, case-insensitive): Profiles page (`DashboardViewModel.ReplaceProfiles`, so also after add/edit/delete; the Find-on-other-disk path list follows it), Vanilla & Purge and the Backup & Restore picker (added 2026-11-01).
 - Custom paths (added 2026-10-31): a profile has any number of custom path entries, each a folder **or a single file** (no wildcards), stored in `BackupProfile.CustomFolders` (name kept for JSON compatibility).
   - Editor: list rows (`CustomPathItemViewModel`: path, File/Folder/Not found, drive swap) with Add folder, Add files (multi-select `IFilePickerService`) and remove; duplicates are ignored.
   - Backup: each entry is its own unit and archive, reused when unchanged. Manifest units carry `CustomPath`, the exact entry: a folder, or a file whose `OriginalRootPath` is its parent folder. Unit keys use `CustomPath`, so two files in one folder never collide; older manifests keep matching by folder root. Single-file units have no directory fingerprints.
@@ -33,13 +34,19 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Unregistered hardlinks, file symlinks and directory links/junctions are removed as links only; their targets and other hardlink names are never touched. The preview marks them, and Output reports how many links were removed.
   - Links get no safety copy because their data lives elsewhere, except a hardlinked file whose every name is being deleted, which gets one copy.
   - Creating a snapshot warns when the game folder already contains links (mods still deployed).
-- Game configs backup skips linked files (Vortex deployments; their data is in the staging backup) and reports the count.
-- Ignore list = **Game configs filter only** (user decision 2026-10-31; verified end to end in `IgnoreListTests.cs`):
-  - Staging, Vortex AppData and custom paths are always backed up and restored **completely**, Vortex's own files included. The list only filters Game configs, the game-folder diff against the vanilla snapshot: there only real mod leftovers and configs are wanted, not Vortex's files.
+  - Empty folder cleanup (added 2026-11-01): `SnapshotData.Directories` records every real folder of the vanilla game (empty ones included; links are not entered). After deleting entries, Purge removes every real folder that is not vanilla, deepest first, once it is empty (`Directory.Delete` non-recursive, no safety copy; folders that already were empty are cleaned too). Vanilla folders = `Directories` plus every folder holding a snapshot entry. A folder that still has content (a file that could not be deleted) or cannot be removed is kept and counted. `ISnapshotService.GetUnregisteredDirectoriesAsync` feeds the preview (`"<folder>/    (folder: removed when empty)"`) and Purge; `PurgeResult` has `LinksRemoved`, `FoldersRemoved`, `FoldersKept`. Older snapshots (`Directories` null) only know folders holding vanilla files, so an originally empty vanilla folder counts as unregistered; the preview/purge warns and suggests recreating the snapshot **after** purging (recreating first would record leftover empty folders as vanilla).
+  - Content hashes (added 2026-11-01): `CreateSnapshotAsync` stores a SHA-256 (`FileMetadata.Sha256`, uppercase hex) for every regular file, with throttled "Hashing game files" progress. Links are not hashed; unreadable files get no hash and the snapshot creation warns about them. Older snapshots have no hashes and still load.
+- Game folder backup components (split 2026-11-01), both compared against the vanilla snapshot:
+  - **Game configs** (`BackupComponent.GameConfigs`, folder `configs`, `configs.zip`): only **new** files, i.e. paths not in the snapshot, the same set the purge preview shows. A reinstall or file verification rewriting vanilla files therefore never turns the whole game into "configs". Linked entries are left out (Vortex deployments; their data is in the staging backup), with a warning that says Changed game files include them.
+  - **Changed game files** (`BackupComponent.GameChanges`, `BackupOptions.IncludeGameChanges`, folder `changes`, one unit/archive `game_changes.zip`, monolithic key `changes`): a **complete, shareable copy of everything that differs from vanilla**: new files, configs, modified vanilla files and deployed mod files. Links are stored as **real files**: hardlinks/file symlinks are read through the link, directory links/junctions are expanded with `ScanFollowingLinks` (entries `link/relative`; broken links/loops reported in Output). Zip entry names are relative to the game folder and no link metadata is written, so the archive can be unpacked into a game folder on another PC. Not covered: files outside the game folder (add them as custom paths) and vanilla files that were deleted.
+  - Modified-file detection with hashes (`ISnapshotService.CompareAsync(verifyContent: true)`, returns `SnapshotComparison`): same size/time/kind → unchanged without reading; different size or kind → changed; same size and kind but different time → the file is hashed and is unchanged when the hash matches the snapshot. Those files are "re-anchored": `ISnapshotStore.UpdateEntriesAsync` saves their new timestamps into the baseline (known entries only, the snapshot file keeps its creation time), so the next backup does not hash them again; Output reports the count. Files without a baseline hash are reported as modified and counted as unverified, with a warning to recreate the snapshot. `GetChangesAsync` (purge preview, Game configs) stays metadata-only.
+  - Restore puts both into the game folder; they share the game-folder drive picker (`RestoreGameConfigsDrive`) and each has its own restore card.
+- Ignore list = **game folder filter only** (user decision 2026-10-31, extended to Changed game files 2026-11-01; verified end to end in `IgnoreListTests.cs`):
+  - Staging, Vortex AppData and custom paths are always backed up and restored **completely**, Vortex's own files included. The list only filters the game folder components (Game configs and Changed game files), the game-folder diff against the vanilla snapshot: there only real mod leftovers, configs and mod files are wanted, not Vortex's files.
   - Defaults (`AppSettings.VersionedDefaultIgnorePatterns`): `vortex.deployment*.json` (deployment manifests including the `vortex.deployment.<mod type>.json` variants, defaults version 1) and `__folder_managed_by_vortex` (folder markers, defaults version 2).
   - Existing settings files receive only the defaults newer than their `DefaultsVersion` (in `JsonSettingsStore.LoadAsync`), so a default the user removed is never re-added.
   - The profile switch "Filter game configs with the ignore list" (`BackupProfile.UseIgnoreList`) controls it. Output reports how many files were skipped, with up to 5 examples.
-  - Restore applies the same patterns to Game configs units only (relative to the game folder), so older backups do not bring Vortex files back. It uses the matching profile's switch, defaulting to on.
+  - Restore applies the same patterns to Game configs and Changed game files units only (relative to the game folder), so older backups do not bring Vortex files back. It uses the matching profile's switch, defaulting to on.
   - Vanilla snapshots and Purge never use the ignore list, so Purge removes Vortex's files like any other unregistered entry.
   - The first backup after adding a pattern re-archives the configs unit once, because its file list changes.
 - Log files (added 2026-10-31): `FileLogWriter` (`ILogFileWriter`) appends every Output entry to `Logs\log_yyyy-MM-dd.txt`. Logs older than 30 days are deleted on the first write of a session, and logging never throws. Unhandled UI, AppDomain and unobserved task exceptions are logged with full details; UI ones also appear in Output and do not close the app. The Output toolbar has "Open Logs folder"; Clear only empties the panel.
@@ -55,7 +62,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
 - Backup & Restore profile picker is built for many games:
   - search box (`TargetFilter` → `VisibleTargets`);
   - a "Select all" button that becomes "Deselect all" once every listed game is selected (acts on the listed/filtered games only), plus Clear (all games);
-  - after a backup runs to the end (also with locked files), no games are selected and components reset to the defaults (staging + Vortex AppData). A cancelled or failed backup keeps the selection so it can be retried;
+  - after a backup runs to the end (also with locked files), the games are deselected but the component toggles keep the user's choice (no reset to defaults, changed 2026-11-01). A cancelled or failed backup keeps the games selected so it can be retried;
   - live "N of M selected" summary;
   - a bounded, scrollable three-column checkbox grid, with games sorted by name.
 - Backup & Restore: Continue Backup for locked files, overwrite confirmation, pre-restore safety backup, component selection and legacy version-1/monolithic restore. Progress and cancel live in the global Output panel (below).
@@ -73,13 +80,13 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
     - slim title strip with icon commands (Copy all, Clear, Hide);
     - flat monospace log using `FlatListBoxStyle`, with severity colours (`SystemFillColorSuccess/Caution/CriticalBrush`);
     - auto-scrolls only while already at the bottom; Ctrl+C copies the selected lines.
-  - A VS-style status bar below it shows "Ready" or the operation and phase, a compact progress bar (indeterminate when totals are 0), the percentage, Cancel/Cancelling..., and an Output toggle. `MainViewModel.IsOutputVisible` hides the tool window and remembers its height; it reopens automatically when an operation starts.
+  - A VS-style status bar below it shows "Ready" or the operation and phase, the counters, a compact 120 px progress bar (indeterminate when totals are 0), the percentage, Cancel/Cancelling..., and an Output toggle. Since 2026-11-01 the counters (`MainViewModel.ProgressCountsText`, e.g. "93 / 2,337 files · 230.9 MB / 1.2 GB") are a separate, never-trimmed text next to the progress bar; the operation/phase text (`StatusText`) takes the remaining width in a `Grid` column and is trimmed with an ellipsis, and its tooltip (`StatusToolTip`) shows the full status plus the current file. Keep phase strings short (e.g. "archiving changes"). `MainViewModel.IsOutputVisible` hides the tool window and remembers its height; it reopens automatically when an operation starts.
   - Closing the window during an operation asks for confirmation, cancels the operation and closes once it has stopped (`MainViewModel.TryPrepareClose` / `CloseRequested`). This lets cancellation clean up temporary archives.
-  - `ISnapshotService.PurgeUnregisteredFilesAsync` returns `PurgeResult(FilesDeleted, SafetyBackupPath)` so the actual deleted count and safety archive are reported.
-- Incremental snapshots: each run creates a dated manifest per component under `<backup-root>\<game>\<component>\<timestamp>`, where component is `staging`, `configs`, `appdata` or `custom`. Shared immutable archives live in the sibling `<backup-root>\<game>\<component>\_archives`. A restore selects one component's dated folder. Keep `_archives` with all dated snapshot folders when moving/copying. One archive unit per top-level staging mod; loose root files are separate. New/changed units receive new archives; unchanged archives are reused; removed mods are omitted only from new snapshots. The same unit layout applies to configs, Vortex AppData and custom folders.
+  - `ISnapshotService.PurgeUnregisteredFilesAsync` returns `PurgeResult(FilesDeleted, SafetyBackupPath)` plus `LinksRemoved`/`FoldersRemoved`/`FoldersKept`, so the actual counts and safety archive are reported.
+- Incremental snapshots: each run creates a dated manifest per component under `<backup-root>\<game>\<component>\<timestamp>`, where component is `staging`, `configs`, `changes`, `appdata` or `custom`. Shared immutable archives live in the sibling `<backup-root>\<game>\<component>\_archives`. A restore selects one component's dated folder. Keep `_archives` with all dated snapshot folders when moving/copying. One archive unit per top-level staging mod; loose root files are separate. New/changed units receive new archives; unchanged archives are reused; removed mods are omitted only from new snapshots. The same unit layout applies to configs, Vortex AppData and custom folders.
 - Fingerprints store relative paths, size, creation/last-write times, file attributes, directory inventory/attributes, and SHA-256 per file. Hashes are calculated during the normal archive read. Unchanged metadata reuses stored hashes and archives without rereading file contents. When metadata changes, the file is read and hashed during archive creation; identical content hashes discard the temporary archive and reuse the prior archive. A stable 30 GB file is not reread on every run. Edits preserving all compared metadata cannot be detected without rereading; the user chose to avoid rereading unchanged large files.
 - Locked-file snapshots remain incomplete and unavailable for restore until Continue Backup succeeds. Job state records failed files and pending archive/manifest publication.
-- UI defaults: no profile selected, staging and Vortex AppData selected, game configs and custom folders unselected. New backups do not offer monolithic packaging. Existing version-1 and monolithic snapshots remain restorable. The first run after old manifests rearchives units without saved hashes.
+- UI defaults: no profile selected and **every component off** (staging, game configs, changed game files, Vortex AppData, custom paths; changed 2026-11-01 at the user's request). New backups do not offer monolithic packaging. Existing version-1 and monolithic snapshots remain restorable. The first run after old manifests rearchives units without saved hashes.
 - Snapshot retention exists in code: after a complete backup, `BackupJobRunner.CleanupRetainedBackupsAsync` keeps the newest `MaxPreservedBackupsPerGame` (Settings, default 3) dated folders per component. It deletes older ones and any `_archives/*.zip` not referenced by a retained manifest. The user confirmed this retention is intended (see settled decisions). Rules:
   - Only complete snapshots count toward the limit.
   - Incomplete snapshots listed in the active job's `PendingManifestPaths` (awaiting Continue Backup) are always kept, together with the archives they reference. If the job file can't be read, all incomplete snapshots are kept.
@@ -89,7 +96,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - `.pending` temp archives are never deleted by retention, so a discarded job's temp files stay until removed manually.
 - Safety backup retention compares UTC file times with UTC now; it previously mixed UTC and local time.
 - Paused job file: `BackupJobStateService` (DI constructor) saves to `AppStoragePaths.ActiveBackupJobFilePath`, the same path the app loads from. It writes via a temporary file and atomic replace; an unreadable job file loads as "no paused job".
-- Last checked 2026-10-31: solution build succeeded; 185 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
+- Last checked 2026-11-01: solution build succeeded; 200 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
 
 ## Settled decisions — do not reopen without asking
 
@@ -97,7 +104,10 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
 - Keep shared `_archives` when moving/copying a game's snapshots.
 - Retention cleanup is intended: keep the newest `MaxPreservedBackupsPerGame` snapshots per component and delete `_archives` zips that no retained manifest references. Changes to it must stay reference-aware: never delete an archive that a retained snapshot uses.
 - Avoid rereading unchanged large files on every backup. The chosen policy is metadata-first comparison and SHA-256 during reads already needed for archive creation; when relevant metadata changes, hash while creating a candidate archive and reuse the prior archive if content hashes match. Do not silently claim byte-for-byte detection for edits that preserve all compared metadata.
-- On new profiles, default Vortex AppData to `%APPDATA%\Vortex`, but keep it editable. Do not select profiles by default in Backup & Restore. Default selected components are staging and Vortex AppData only; game configs and custom folders are opt-in.
+- On new profiles, default Vortex AppData to `%APPDATA%\Vortex`, but keep it editable. Do not select profiles by default in Backup & Restore. All backup components start off and are opt-in; a finished backup deselects the games but never resets the component toggles (user decision 2026-11-01).
+- Game lists are sorted by game name on every page.
+- Game configs = new files only (paths missing from the snapshot, like the purge preview). Changed game files = every difference (new + content-modified files) as one self-contained archive with links stored as real files, so it can be shared and unpacked into another game folder (user decision 2026-11-01).
+- Modified game files are judged by content: the snapshot stores SHA-256 hashes, rewritten-but-identical files are not "changed", and their new timestamps are saved into the baseline so they are hashed only once.
 - Drive/path detection is per path. There is no global drive-letter remap; preserve the per-path drive swap and Find on other disk proposal flow.
 - A locked-file backup must offer **Continue Backup**. Continue retries recorded failed files and completes pending archives/manifests; do not replace it with a warning-only experience or silently discard job state.
 - Preserve restore compatibility with older version-1 and monolithic backups, even though the current UI creates incremental snapshots.
@@ -107,11 +117,11 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
 - Links:
   - Backups follow links and store target bytes.
   - Game-folder operations never follow links.
-  - Purge removes unregistered links (hardlinks, symlinks, junctions) as links only and must never modify or delete their targets.
-  - Game configs skip linked files.
+  - Purge removes unregistered links (hardlinks, symlinks, junctions) as links only and must never modify or delete their targets. It removes non-vanilla folders only when they are empty (non-recursive delete).
+  - Game configs skip linked files; Changed game files store them as real files.
   - Do not use recursive deletes or recursive enumeration through directory links in game folders.
 - Custom paths are folders or single files, without wildcards.
-- The ignore list only filters Game configs. Staging, Vortex AppData and custom paths are backed up and restored completely; do not apply the ignore list to them.
+- The ignore list only filters the game folder components (Game configs and Changed game files). Staging, Vortex AppData and custom paths are backed up and restored completely; do not apply the ignore list to them.
 
 ## Architecture and source map
 
@@ -132,7 +142,7 @@ Key implementation files:
 - `UniversalBackupTool.Services/Services/Jobs/BackupJobStateService.cs`: persisted active job state.
 - `UniversalBackupTool.Services/Services/FileSystem/FileSystemProvider.cs` and `NativeFileInfo.cs`: link-following (backup) and non-following (game folder) scans, link classification and link-only deletes.
 - `UniversalBackupTool.Services/Services/Logging/FileLogWriter.cs`: daily log files; error handlers are registered in `UI/App.xaml.cs`.
-- `UniversalBackupTool.Services/Services/Snapshots/SnapshotService.cs` and `JsonSnapshotStore.cs`: vanilla baseline/diff persistence.
+- `UniversalBackupTool.Services/Services/Snapshots/SnapshotService.cs` and `JsonSnapshotStore.cs`: vanilla baseline (hashes, folders), metadata diff, content-verified comparison, purge with empty folder cleanup, persistence and timestamp re-anchoring.
 - `UniversalBackupTool.Services/Services/Profiles/JsonProfileStore.cs`, `Services/Settings/JsonSettingsStore.cs`, `Services/Paths/PathDriveService.cs`: profile/settings persistence and per-path drive discovery.
 - `UniversalBackupTool.Services/Services/Operations/OperationCoordinator.cs` and `OperationOutputService.cs`: application-wide operation state/progress/cancellation and the Output entries. Contracts are in `Interfaces/Interfaces/Operations/` (`IOperationCoordinator`, `IOperationScope`, `IOperationOutputService`), models in `Models/Models/Operations/`.
 - `UniversalBackupTool.ViewModels/ViewModels/Base/BasicViewModel.cs`: base for all ViewModels. Takes the Output service and coordinator and provides `Report*`, `RunBusyAsync` (short page actions) and `RunOperationAsync` (coordinated long operations), plus `IsIdle`/`CanStartOperation`.
@@ -141,9 +151,12 @@ Key implementation files:
 - `UniversalBackupTool.UI/Views/*.xaml`: actual UI. The HTML in Documentation is illustrative only.
 - Tests:
   - `BackupRestoreTests.cs`: incremental backup, restore, continue, retention and path safety;
-  - `LinkHandlingTests.cs`: real links, purge, link-following backups, custom single-file paths;
+  - `LinkHandlingTests.cs`: real links, purge, link-following backups, custom single-file paths, Changed game files storing links as real files;
+  - `IgnoreListTests.cs`: ignore list end to end, Game configs (new only) versus Changed game files (new + modified), restore of Changed game files;
+  - `SnapshotContentHashTests.cs`: snapshot hashes, content-verified comparison, re-anchoring, store updates keeping the creation time;
+  - `PurgeFolderTests.cs`: recorded folders, empty folder removal, older snapshots without folders;
   - `LoggingTests.cs`, `PortableSettingsTests.cs`, `OperationServicesTests.cs`;
-  - `ViewModelTests.cs`: profile picker toggle/reset, operation rejection, theme save, custom paths editor;
+  - `ViewModelTests.cs`: profile picker toggle, components off by default and kept after a backup, operation rejection, theme save, custom paths editor;
   - `ServiceTests.cs`, `ProfileStoreTests.cs`, `SnapshotStoreTests.cs`, `PathDriveServiceTests.cs`.
 
 There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTool.Models/Models/*.cs` (root level), `UniversalBackupTool.Services/Interfaces/*.cs`, `UniversalBackupTool.Interfaces/UniversalBackupTool.Interfaces.csproj` and `UniversalBackupTool.Tests/ServiceLayerTests.cs`. `Services/Implementations/*` no longer exists. Legacy `IBackupEngine`/`BackupEngine` is still registered in DI. The UI is wired to `IBackupJobRunner`/`BackupJobRunner`. Do not delete or migrate legacy code without checking references and tests; legacy restore compatibility is intentional.
@@ -164,8 +177,14 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
      - custom paths with files and folders;
      - log files and Open Logs folder;
      - launching the portable .exe from a fresh folder.
-2. Optional: clean up `.pending` temp archives left by discarded jobs (reference-aware; never touch an active job's pending files).
-3. Optional: Purge could also remove directories that become empty and were not in the snapshot (the snapshot records files and links, not directories).
+   - Added 2026-11-01:
+     - purge with an older snapshot removes leftover empty folders; then recreate the snapshot (records folders and hashes; snapshot creation is slower because it hashes the game);
+     - Changed game files after a same-version reinstall skip identical files and report re-anchored timestamps; a second run hashes nothing;
+     - Changed game files archive unpacked into a clean game folder gives a working modded game (links as real files);
+     - status bar counters stay visible with long phase texts and at the minimum window width;
+     - sorted game lists; toggles kept after a backup.
+2. Optional: "Export for sharing": one zip with Changed game files plus custom paths under a clear name, and a text list of deleted vanilla files.
+3. Optional: clean up `.pending` temp archives left by discarded jobs (reference-aware; never touch an active job's pending files).
 4. Optional: Continue Backup reopens pending archives with `ZipArchiveMode.Update`, which rewrites the archive and can be slow or memory-heavy for multi-GB mods; consider a streaming alternative.
 5. Optional: benchmark and verify Google Drive sync locations and non-NTFS filesystems (hardlink detection needs NTFS; elsewhere files are treated as ordinary).
 
@@ -174,10 +193,11 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
 **Implemented and covered by service tests:** per-mod incremental reuse; changed/removed mod snapshots; metadata-change/content-same hash reuse; restore from shared archives; legacy restore; locked-file retry at the service/job level; ZIP traversal rejection; profile/settings/snapshot storage; vanilla diff and purge safety backup; operation coordinator (single operation, cancel, scope end, phase logging) and Output service (severity, cap, clear). Also covered:
 - real hardlinks, junctions and symlinks: classification, link-only purge with targets intact, link-following backups with loop and broken-link handling, symlink target changes re-archived;
 - custom single-file paths: backup and restore;
+- Game configs versus Changed game files, links stored as real files, snapshot hashes with re-anchoring, empty folder purge;
 - log files, portable settings paths;
 - ViewModel behaviour.
 
-The last reported automated test run was 185 passing NUnit tests on 2026-10-31. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
+The last reported automated test run was 200 passing NUnit tests on 2026-11-01. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
 
 **Not established by those unit tests:**
 - the Output panel and cross-page operation behaviour in the real WPF app, including UI-thread marshalling under a real dispatcher;
@@ -207,11 +227,11 @@ The legacy `IFileSystemProvider.EnumerateFilesAsync`/`IsSymlink`/`ResolveActualP
 - Avoid `ui:Button` in DataTemplates; a previous `PressedForeground` binding error was resolved with plain WPF `Button`. Use `helpers:StackPanelSpacing.Spacing`, not a nonexistent `ui:StackPanel`.
 - Test actual crash/restart resume of a paused backup.
 - Legacy `IBackupEngine`/`BackupEngine` remains beside newer `IBackupJobRunner`/`BackupJobRunner`; UI uses the latter. Check references before removing old code.
-- Purge deletes files and links, not empty directories. Safety archives run before purge/restore overwrites.
+- Purge deletes files and links, then the non-vanilla folders that are empty afterwards. Safety archives run before purge/restore overwrites (empty folders need none).
 - For a future code task, first inspect the exact code path and its existing tests, then implement the requested polish/fix; do not use this handoff as a reason to perform a broad audit or unrelated refactor.
 
 ## Other Documentation files
 
-- `Basic info.txt`: original rationale (Ukrainian), updated with incremental backup, retry behavior, link handling, custom paths, logging and portable publish.
+- `Basic info.txt`: original rationale (Ukrainian), updated with incremental backup, retry behavior, link handling, custom paths, logging, portable publish, the Game configs / Changed game files split, snapshot hashes and empty folder purge.
 - `Vortex_Backup_Tool_Detailed_Human_Plan.docx`: original human-readable plan, retained as historical design input; this Markdown contains current status.
 - `Vortex_Backup_Tool_Mockup.html`: illustrative UI updated with current defaults and labels; it is not the live UI specification.
