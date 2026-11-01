@@ -135,6 +135,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
             IncludeStaging = true;
             IncludeGameConfigs = false;
+            IncludeGameChanges = false;
             IncludeVortexAppData = true;
             IncludeCustomFolders = false;
         }
@@ -191,6 +192,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private bool _includeGameConfigs;
 
         [ObservableProperty]
+        private bool _includeGameChanges;
+
+        [ObservableProperty]
         private bool _includeVortexAppData = true;
 
         [ObservableProperty]
@@ -215,6 +219,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private bool _restoreHasGameConfigs;
 
         [ObservableProperty]
+        private bool _restoreHasGameChanges;
+
+        [ObservableProperty]
         private bool _restoreHasAppData;
 
         [ObservableProperty]
@@ -225,6 +232,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         [ObservableProperty]
         private bool _restoreGameConfigs = true;
+
+        [ObservableProperty]
+        private bool _restoreGameChanges = true;
 
         [ObservableProperty]
         private bool _restoreAppData = true;
@@ -242,6 +252,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         private string? _restoreGameConfigsDrive;
 
+        /// <summary>
+        /// Drive of the game folder, shared by both game folder components (Game configs and Changed game files).
+        /// </summary>
         public string? RestoreGameConfigsDrive
         {
             get => _restoreGameConfigsDrive;
@@ -267,6 +280,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         partial void OnRestoreStagingChanged(bool value) => RefreshRestorePlan();
 
         partial void OnRestoreGameConfigsChanged(bool value) => RefreshRestorePlan();
+
+        partial void OnRestoreGameChangesChanged(bool value) => RefreshRestorePlan();
 
         partial void OnRestoreAppDataChanged(bool value) => RefreshRestorePlan();
 
@@ -309,7 +324,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private async Task StartBackupAsync()
         {
             var selected = Targets.Where(target => target.IsSelected).Select(target => target.Profile).ToList();
-            var options = new BackupOptions(IncludeStaging, IncludeGameConfigs, IncludeVortexAppData, IncludeCustomFolders);
+            var options = new BackupOptions(IncludeStaging, IncludeGameConfigs, IncludeVortexAppData, IncludeCustomFolders, IncludeGameChanges: IncludeGameChanges);
 
             if (selected.Count == 0)
             {
@@ -418,6 +433,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
                     RestoreHasStaging = manifest.Units.Any(unit => unit.Component == BackupComponent.StagingFolders);
                     RestoreHasGameConfigs = manifest.Units.Any(unit => unit.Component == BackupComponent.GameConfigs);
+                    RestoreHasGameChanges = manifest.Units.Any(unit => unit.Component == BackupComponent.GameChanges);
                     RestoreHasAppData = manifest.Units.Any(unit => unit.Component == BackupComponent.VortexAppData);
                     RestoreHasCustomFolders = manifest.Units.Any(unit => unit.Component == BackupComponent.CustomFolders);
 
@@ -463,7 +479,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 var result = await Task.Run(() => _restoreService.RestoreAsync(folder, plan, scope, scope.CancellationToken, ignorePatterns), scope.CancellationToken);
 
                 if (result.IgnoredFiles > 0)
-                    ReportInfo($"Game configs ignore list: {result.IgnoredFiles:N0} file(s) in the backup match the ignore patterns and were not restored.");
+                    ReportInfo($"Game folder ignore list: {result.IgnoredFiles:N0} file(s) in the backup match the ignore patterns and were not restored.");
 
                 if (result.SafetyBackupPath is not null)
                     ReportInfo($"Files that were replaced were saved to {result.SafetyBackupPath}");
@@ -482,7 +498,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 ReportInfo($"{result.GameName}: {result.FilesArchived:N0} file(s) written, snapshot {result.BackupDirectory}");
 
                 if (result.IgnoredFiles > 0)
-                    ReportInfo($"{result.GameName}: game configs ignore list skipped {result.IgnoredFiles:N0} file(s), e.g. {string.Join(", ", result.IgnoredExamples)}");
+                    ReportInfo($"{result.GameName}: game folder ignore list skipped {result.IgnoredFiles:N0} file(s), e.g. {string.Join(", ", result.IgnoredExamples)}");
             }
 
             foreach (var warning in batch.Results.SelectMany(result => result.Warnings))
@@ -530,6 +546,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             if (options.IncludeGameConfigs)
                 names.Add("game configs");
 
+            if (options.IncludeGameChanges)
+                names.Add("changed game files");
+
             if (options.IncludeVortexAppData)
                 names.Add("Vortex AppData");
 
@@ -566,6 +585,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             if (RestoreHasGameConfigs && RestoreGameConfigs)
                 components.Add(BackupComponent.GameConfigs);
 
+            if (RestoreHasGameChanges && RestoreGameChanges)
+                components.Add(BackupComponent.GameChanges);
+
             if (RestoreHasAppData && RestoreAppData)
                 components.Add(BackupComponent.VortexAppData);
 
@@ -584,13 +606,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             var defaultPlan = _restoreService.BuildPlan(_restoreManifest, _allProfiles, [
                 BackupComponent.StagingFolders,
                 BackupComponent.GameConfigs,
+                BackupComponent.GameChanges,
                 BackupComponent.VortexAppData,
                 BackupComponent.CustomFolders]).ToList();
 
             RestoreStagingDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.StagingFolders) is { } staging
                 ? _pathDriveService.GetDrive(staging.RootPath)
                 : null;
-            RestoreGameConfigsDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.GameConfigs) is { } configs
+            RestoreGameConfigsDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component is BackupComponent.GameConfigs or BackupComponent.GameChanges) is { } configs
                 ? _pathDriveService.GetDrive(configs.RootPath)
                 : null;
             RestoreAppDataDrive = defaultPlan.FirstOrDefault(item => item.Unit.Component == BackupComponent.VortexAppData) is { } appData
@@ -635,6 +658,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 {
                     BackupComponent.StagingFolders => "Staging folders",
                     BackupComponent.GameConfigs => "Game configs",
+                    BackupComponent.GameChanges => "Changed game files",
                     BackupComponent.VortexAppData => "Vortex AppData",
                     _ => "Custom path"
                 };

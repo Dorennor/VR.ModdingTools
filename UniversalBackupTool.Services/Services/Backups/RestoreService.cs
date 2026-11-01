@@ -146,7 +146,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             return unit.Component switch
             {
                 BackupComponent.StagingFolders => profile.VortexStagingPath,
-                BackupComponent.GameConfigs => profile.GameRootPath,
+                BackupComponent.GameConfigs or BackupComponent.GameChanges => profile.GameRootPath,
                 BackupComponent.VortexAppData => profile.VortexAppDataPath,
                 BackupComponent.CustomFolders => ResolveCustomRoot(profile, unit),
                 _ => null
@@ -249,13 +249,14 @@ namespace UniversalBackupTool.Service.Services.Backups
                     if (!seen.Add(archivePath + "|" + entry.FullName))
                         continue;
 
-                    // Like the backup, the ignore list only filters Game configs, matched relative to the game folder.
-                    // Staging, Vortex AppData and custom paths are always restored completely.
+                    // Like the backup, the ignore list only filters the game folder components (Game configs and Changed
+                    // game files), matched relative to the game folder. Staging, Vortex AppData and custom paths are always
+                    // restored completely.
                     var componentRelative = string.IsNullOrEmpty(planItem.Unit.RelativeDestination)
                         ? entry.FullName[prefix.Length..]
                         : planItem.Unit.RelativeDestination.TrimEnd('/') + "/" + entry.FullName[prefix.Length..];
 
-                    if (planItem.Unit.Component == BackupComponent.GameConfigs && filter.IsIgnored(componentRelative))
+                    if ((planItem.Unit.Component is BackupComponent.GameConfigs or BackupComponent.GameChanges) && filter.IsIgnored(componentRelative))
                     {
                         ignored++;
                         continue;

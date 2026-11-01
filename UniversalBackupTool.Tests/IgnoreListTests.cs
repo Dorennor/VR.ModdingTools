@@ -11,8 +11,8 @@ using UniversalBackupTool.Services;
 namespace UniversalBackupTool.Tests
 {
     /// <summary>
-    /// End-to-end checks of the ignore list with a realistic Vortex layout. The list only filters Game configs (the game
-    /// folder diff): Vortex's own files there (deployment manifests, __folder_managed_by_vortex markers) are not backed up
+    /// End-to-end checks of the ignore list with a realistic Vortex layout. The list only filters the game folder
+    /// components (Game configs and Changed game files): Vortex's own files there (deployment manifests, __folder_managed_by_vortex markers) are not backed up
     /// or restored. Staging, Vortex AppData and custom paths are always backed up completely, and Purge ignores the list.
     /// </summary>
     [TestFixture]
@@ -274,6 +274,54 @@ namespace UniversalBackupTool.Tests
                 Assert.That(File.Exists(Path.Combine(_game, "backup", "Launcher", "cs", "__folder_managed_by_vortex")), Is.False);
                 Assert.That(File.Exists(Path.Combine(_staging, "vortex.deployment.json")), Is.True, "staging is restored completely");
                 Assert.That(File.Exists(Path.Combine(_staging, "__folder_managed_by_vortex")), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task Backup_GameConfigs_TakeOnlyNewFiles_ChangedGameFiles_AlsoTakeModifiedVanillaFiles()
+        {
+            var profile = CreateProfile();
+            await PrepareModdedGameFolderAsync(profile);
+
+            // A reinstall, file verification or game update rewrites vanilla files after the snapshot.
+            Write(_game, "game.exe", "vanilla, rewritten by a reinstall");
+
+            var options = new BackupOptions(false, true, false, false, IncludeGameChanges: true);
+            var batch = await _runner.RunBackupAsync([profile], options, DefaultSettings());
+            var archived = await ArchivedPathsAsync(batch);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(archived.Where(path => path.StartsWith("GameConfigs/", StringComparison.Ordinal)),
+                    Is.EquivalentTo(new[] { "GameConfigs/user.ini", "GameConfigs/SKSE/Plugins/plugin.ini" }));
+                Assert.That(archived.Where(path => path.StartsWith("GameChanges/", StringComparison.Ordinal)),
+                    Is.EquivalentTo(new[] { "GameChanges/game.exe", "GameChanges/user.ini", "GameChanges/SKSE/Plugins/plugin.ini" }),
+                    "the ignore list filters Vortex's files from changed game files too");
+                Assert.That(batch.Results.Select(result => Path.GetFileName(Path.GetDirectoryName(result.BackupDirectory))),
+                    Is.EquivalentTo(new[] { "configs", "changes" }));
+            });
+        }
+
+        [Test]
+        public async Task Restore_ChangedGameFiles_GoToTheGameFolder()
+        {
+            var profile = CreateProfile();
+            await PrepareModdedGameFolderAsync(profile);
+            Write(_game, "game.exe", "patched vanilla");
+
+            var batch = await _runner.RunBackupAsync([profile], new BackupOptions(false, false, false, false, IncludeGameChanges: true), DefaultSettings());
+            Directory.Delete(_game, recursive: true);
+
+            var result = batch.Results.Single();
+            var manifest = (await _restore.ReadManifestAsync(result.BackupDirectory))!;
+            var plan = _restore.BuildPlan(manifest, [profile], [BackupComponent.GameChanges]);
+            await _restore.RestoreAsync(result.BackupDirectory, plan, ignorePatterns: DefaultSettings().GlobalIgnorePatterns);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(plan.Single().RootPath, Is.EqualTo(_game));
+                Assert.That(File.ReadAllText(Path.Combine(_game, "game.exe")), Is.EqualTo("patched vanilla"));
+                Assert.That(File.Exists(Path.Combine(_game, "user.ini")), Is.True);
             });
         }
 

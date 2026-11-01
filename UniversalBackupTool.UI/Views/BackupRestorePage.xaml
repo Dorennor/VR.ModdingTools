@@ -167,11 +167,21 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Files in the game folder that were added or changed since the vanilla snapshot."
+                    Description="New files in the game folder that are not in the vanilla snapshot (the same list the purge preview shows)."
                     Header="Game configs"
                     Icon="{ui:SymbolIcon Settings24}">
                     <ui:ToggleSwitch
                         IsChecked="{Binding IncludeGameConfigs, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="Every file in the game folder that differs from the vanilla snapshot: new files and modified vanilla files. After a reinstall or file verification this can be the whole game."
+                    Header="Changed game files"
+                    Icon="{ui:SymbolIcon DocumentEdit24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeGameChanges, Mode=TwoWay}"
                         OffContent="Off"
                         OnContent="On" />
                 </controls:SettingsCard>
@@ -238,7 +248,7 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="Changed game files from the configs snapshot."
+                        Description="New game folder files from the configs snapshot."
                         Header="Game configs"
                         Icon="{ui:SymbolIcon Settings24}"
                         Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}">
@@ -249,6 +259,23 @@
                                 Style="{StaticResource RestoreDriveComboStyle}" />
                             <ui:ToggleSwitch
                                 IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="New and modified game folder files from the changes snapshot."
+                        Header="Changed game files"
+                        Icon="{ui:SymbolIcon DocumentEdit24}"
+                        Visibility="{Binding RestoreHasGameChanges, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreGameChanges, Mode=TwoWay}"
                                 OffContent="Off"
                                 OnContent="On" />
                         </StackPanel>

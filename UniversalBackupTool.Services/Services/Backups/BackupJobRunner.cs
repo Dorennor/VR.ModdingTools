@@ -148,6 +148,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (options.IncludeGameConfigs)
                 expanded.Add(new BackupOptions(false, true, false, false, options.Monolithic));
 
+            if (options.IncludeGameChanges)
+                expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameChanges: true));
+
             if (options.IncludeVortexAppData)
                 expanded.Add(new BackupOptions(false, false, true, false, options.Monolithic));
 
@@ -164,6 +167,9 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
                 return "Configs";
+
+            if (options.IncludeGameChanges)
+                return "Changed game files";
 
             if (options.IncludeVortexAppData)
                 return "Vortex AppData";
@@ -562,9 +568,9 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         /// <summary>
-        /// Staging, Vortex AppData and custom paths are backed up completely. The ignore list only filters Game configs:
-        /// the game folder holds Vortex's own files (deployment manifests, folder markers) next to the real leftovers and
-        /// configs worth keeping.
+        /// Staging, Vortex AppData and custom paths are backed up completely. The ignore list only filters the game folder
+        /// components (Game configs and Changed game files): the game folder holds Vortex's own files (deployment manifests,
+        /// folder markers) next to the real leftovers and configs worth keeping.
         /// </summary>
         private async Task<List<UnitPlan>> CollectUnitsAsync(
             BackupProfile profile,
@@ -591,10 +597,18 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
             {
-                var configs = await CollectConfigFilesAsync(profile, configFilter, warnings, cancellationToken);
+                var configs = await CollectGameFolderChangesAsync(profile, includeModified: false, "Game configs", configFilter, warnings, cancellationToken);
 
                 if (configs is not null && configs.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameConfigs, "configs", "configs.zip", profile.GameRootPath!, configs));
+            }
+
+            if (options.IncludeGameChanges)
+            {
+                var changed = await CollectGameFolderChangesAsync(profile, includeModified: true, "Changed game files", configFilter, warnings, cancellationToken);
+
+                if (changed is not null && changed.Count > 0)
+                    units.Add(CreateSingleUnit(options, BackupComponent.GameChanges, "changes", "game_changes.zip", profile.GameRootPath!, changed));
             }
 
             if (options.IncludeVortexAppData)
@@ -678,8 +692,17 @@ namespace UniversalBackupTool.Service.Services.Backups
                 .ToList();
         }
 
-        private async Task<List<SourceFile>?> CollectConfigFilesAsync(
+        /// <summary>
+        /// Game folder files that differ from the baseline snapshot. Game configs (<paramref name="includeModified"/> false)
+        /// take only files the snapshot does not list, the same set the purge preview shows: a reinstall or file
+        /// verification rewrites every vanilla file with new timestamps, which must not turn the whole game into "configs".
+        /// Changed game files (<paramref name="includeModified"/> true) also take vanilla files whose size, time or kind
+        /// differ from the snapshot.
+        /// </summary>
+        private async Task<List<SourceFile>?> CollectGameFolderChangesAsync(
             BackupProfile profile,
+            bool includeModified,
+            string label,
             IIgnoreFilter filter,
             List<string> warnings,
             CancellationToken cancellationToken)
@@ -699,21 +722,24 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (baseline is null)
             {
-                warnings.Add("Game configs were skipped: no baseline snapshot exists. Create one on the Vanilla & Purge page.");
+                warnings.Add($"{label} were skipped: no baseline snapshot exists. Create one on the Vanilla & Purge page.");
                 return null;
             }
 
-            var changes = await Task.Run(() => _snapshotService.GetChangesAsync(rootPath, baseline.Data, cancellationToken), cancellationToken);
+            var allChanges = await Task.Run(() => _snapshotService.GetChangesAsync(rootPath, baseline.Data, cancellationToken), cancellationToken);
+            var changes = includeModified
+                ? allChanges.Values.ToList()
+                : allChanges.Where(change => !baseline.Data.Files.ContainsKey(change.Key)).Select(change => change.Value).ToList();
 
             // Links in the game folder are Vortex deployments (hardlinks/symlinks to staging); their data is already in
-            // the staging backup, so only real files are config candidates.
-            var linkedChanges = changes.Values.Count(change => change.IsLink);
+            // the staging backup, so only real files are candidates.
+            var linkedChanges = changes.Count(change => change.IsLink);
 
             if (linkedChanges > 0)
-                warnings.Add($"Game configs: {linkedChanges:N0} linked file(s) in the game folder (Vortex deployments) were skipped; their data is part of the staging backup.");
+                warnings.Add($"{label}: {linkedChanges:N0} linked file(s) in the game folder (Vortex deployments) were skipped; their data is part of the staging backup.");
 
             // Changes also contain files deleted since the snapshot, which there is nothing to archive for.
-            return changes.Values
+            return changes
                 .Where(change => !change.IsLink)
                 .Select(change => change.RelativePath)
                 .Select(relative => new SourceFile(Path.Combine(rootPath, relative.Replace('/', Path.DirectorySeparatorChar)), relative.Replace('\\', '/')))
@@ -1245,6 +1271,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 BackupComponent.GameConfigs => "configs",
                 BackupComponent.VortexAppData => "appdata",
                 BackupComponent.CustomFolders => "custom",
+                BackupComponent.GameChanges => "changes",
                 _ => "misc"
             };
         }
