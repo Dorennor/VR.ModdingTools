@@ -1177,4 +1177,4 @@ namespace UniversalBackupTool.Tests
             Assert.That(paths.LogsDirectory.StartsWith(baseDirectory), Is.True);
         }
     }
-}
+}

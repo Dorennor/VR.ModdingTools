@@ -162,7 +162,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             if (item is null)
                 return;
 
-
             var profile = item.Profile;
 
             _editingProfileId = profile.Id;
@@ -233,7 +232,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                 {
                     if (item is null)
                         return;
-
 
                     var updated = Profiles
                         .Select(profileItem => profileItem.Profile)
@@ -486,4 +484,4 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             return trimmed.Length == 0 ? null : trimmed;
         }
     }
-}
+}

@@ -6,7 +6,6 @@ using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.FileSystem;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Settings;
-using UniversalBackupTool.Model.Models.Snapshots;
 using UniversalBackupTool.Service.Services.Backups;
 using UniversalBackupTool.Service.Services.Settings;
 using UniversalBackupTool.Service.Services.Snapshots;

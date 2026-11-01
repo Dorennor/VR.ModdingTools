@@ -273,7 +273,6 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         partial void OnRestoreCustomFoldersChanged(bool value) => RefreshRestorePlan();
 
-
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
                 {

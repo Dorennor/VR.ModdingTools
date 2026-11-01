@@ -134,4 +134,4 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<SettingsPage>();
         }
     }
-}
+}

@@ -1,12 +1,12 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 
-using static System.FormattableString;
-
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Logging;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Settings;
+
+using static System.FormattableString;
 
 namespace UniversalBackupTool.Service.Services.Backups
 {

@@ -6,6 +6,7 @@ namespace UniversalBackupTool.Model.Models.Settings
         /// Follow the Windows light/dark setting, including live changes.
         /// </summary>
         System,
+
         Light,
         Dark
     }

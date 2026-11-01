@@ -246,4 +246,4 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                 .ToList();
         }
     }
-}
+}
