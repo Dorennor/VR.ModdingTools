@@ -308,7 +308,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             var filter = new CountingIgnoreFilter(_ignorePatternMatcher.Create(profile.UseIgnoreList ? settings.GlobalIgnorePatterns : []));
 
             progress?.Report(new BackupProgress($"{progressLabel}: scanning files", null, 0, 0, 0, 0));
-            var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, cancellationToken);
+            var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, PrefixedProgress.Wrap(progressLabel, progress), cancellationToken);
 
             if (units.Count == 0)
             {
@@ -506,7 +506,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             progress?.Report(new BackupProgress($"{progressLabel}: scanning files", null, 0, 0, 0, 0));
 
-            var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, cancellationToken);
+            var units = await CollectUnitsAsync(profile, options, settings, filter, warnings, PrefixedProgress.Wrap(progressLabel, progress), cancellationToken);
 
             if (units.Count == 0)
             {
@@ -578,6 +578,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             AppSettings settings,
             IIgnoreFilter configFilter,
             List<string> warnings,
+            IProgress<BackupProgress>? progress,
             CancellationToken cancellationToken)
         {
             var units = new List<UnitPlan>();
@@ -597,7 +598,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
             {
-                var configs = await CollectGameFolderChangesAsync(profile, includeModified: false, "Game configs", configFilter, warnings, cancellationToken);
+                var configs = await CollectGameFolderChangesAsync(profile, includeModified: false, "Game configs", configFilter, warnings, progress, cancellationToken);
 
                 if (configs is not null && configs.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameConfigs, "configs", "configs.zip", profile.GameRootPath!, configs));
@@ -605,7 +606,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameChanges)
             {
-                var changed = await CollectGameFolderChangesAsync(profile, includeModified: true, "Changed game files", configFilter, warnings, cancellationToken);
+                var changed = await CollectGameFolderChangesAsync(profile, includeModified: true, "Changed game files", configFilter, warnings, progress, cancellationToken);
 
                 if (changed is not null && changed.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameChanges, "changes", "game_changes.zip", profile.GameRootPath!, changed));
@@ -705,6 +706,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             string label,
             IIgnoreFilter filter,
             List<string> warnings,
+            IProgress<BackupProgress>? progress,
             CancellationToken cancellationToken)
         {
             var rootPath = profile.GameRootPath;
@@ -726,10 +728,25 @@ namespace UniversalBackupTool.Service.Services.Backups
                 return null;
             }
 
-            var allChanges = await Task.Run(() => _snapshotService.GetChangesAsync(rootPath, baseline.Data, cancellationToken), cancellationToken);
+            // Only modified files need the content check; Game configs take new files, which a hash cannot rule out.
+            var comparison = await Task.Run(
+                () => _snapshotService.CompareAsync(rootPath, baseline.Data, verifyContent: includeModified, cancellationToken, progress),
+                cancellationToken);
+
+            if (comparison.Reanchored.Count > 0)
+            {
+                // Same content, new timestamp (reinstall, file verification): remember the new time so the next backup
+                // does not hash these files again.
+                await _snapshotStore.UpdateEntriesAsync(_storagePathsProvider.GetPaths().SnapshotsDirectory, profile.Id, comparison.Reanchored, cancellationToken);
+                warnings.Add($"{label}: {comparison.Reanchored.Count:N0} vanilla file(s) had new timestamps but the same content as in the snapshot; they were not backed up and the snapshot now has their new timestamps.");
+            }
+
+            if (comparison.UnverifiedFiles > 0)
+                warnings.Add($"{label}: {comparison.UnverifiedFiles:N0} file(s) with new timestamps were backed up without a content check because the snapshot has no hashes for them. Recreate the snapshot on the Vanilla & Purge page (while the game folder is vanilla) to enable content checks.");
+
             var changes = includeModified
-                ? allChanges.Values.ToList()
-                : allChanges.Where(change => !baseline.Data.Files.ContainsKey(change.Key)).Select(change => change.Value).ToList();
+                ? comparison.Changes.Values.ToList()
+                : comparison.Changes.Where(change => !baseline.Data.Files.ContainsKey(change.Key)).Select(change => change.Value).ToList();
 
             // Links in the game folder are Vortex deployments (hardlinks/symlinks to staging); their data is already in
             // the staging backup, so only real files are candidates.
@@ -1383,6 +1400,17 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         private sealed record SourceFile(string FullPath, string RelativePath);
+
+        /// <summary>
+        /// Prefixes progress phases of nested work (such as the snapshot content check) with the profile and component.
+        /// </summary>
+        private sealed class PrefixedProgress(string prefix, IProgress<BackupProgress> inner) : IProgress<BackupProgress>
+        {
+            public static IProgress<BackupProgress>? Wrap(string prefix, IProgress<BackupProgress>? inner) =>
+                inner is null ? null : new PrefixedProgress(prefix, inner);
+
+            public void Report(BackupProgress value) => inner.Report(value with { Phase = $"{prefix}: {value.Phase}" });
+        }
 
         /// <summary>
         /// Counts what the ignore list skips, so each backup can report it (with a few examples) in Output.

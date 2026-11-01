@@ -151,7 +151,8 @@ namespace UniversalBackupTool.Tests
                 Assert.That(result.FilesDeleted, Is.EqualTo(4));
                 Assert.That(result.LinksRemoved, Is.EqualTo(3));
                 Assert.That(Directory.EnumerateFileSystemEntries(_game, "*", SearchOption.AllDirectories)
-                    .Select(path => Path.GetRelativePath(_game, path)), Is.EquivalentTo(new[] { "game.exe", "Data" }));
+                    .Select(path => Path.GetRelativePath(_game, path)), Is.EquivalentTo(new[] { "game.exe" }), "Data was created after the snapshot for the hardlink, so it is removed once empty");
+                Assert.That(result.FoldersRemoved, Is.EqualTo(1));
 
                 // Targets are untouched.
                 Assert.That(File.ReadAllText(stagingFile), Is.EqualTo("mod data"));

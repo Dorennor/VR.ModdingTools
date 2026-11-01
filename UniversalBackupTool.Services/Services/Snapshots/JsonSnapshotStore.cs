@@ -38,7 +38,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             // Deserialization loses the case-insensitive comparer, so rebuild the dictionary.
             var files = new Dictionary<string, FileMetadata>(data.Files, StringComparer.OrdinalIgnoreCase);
 
-            return new StoredSnapshot(new SnapshotData(profileId, files), File.GetLastWriteTime(filePath));
+            return new StoredSnapshot(new SnapshotData(profileId, files) { Directories = data.Directories }, File.GetLastWriteTime(filePath));
         }
 
         public async Task SaveAsync(string snapshotsDirectory, SnapshotData snapshot, CancellationToken cancellationToken = default)
@@ -57,6 +57,43 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             }
 
             File.Move(tempPath, filePath, overwrite: true);
+        }
+
+        public async Task UpdateEntriesAsync(
+            string snapshotsDirectory,
+            Guid profileId,
+            IReadOnlyCollection<FileMetadata> entries,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(entries);
+
+            if (entries.Count == 0)
+                return;
+
+            var stored = await LoadAsync(snapshotsDirectory, profileId, cancellationToken);
+
+            if (stored is null)
+                return;
+
+            var files = stored.Data.Files;
+            var updated = 0;
+
+            foreach (var entry in entries)
+            {
+                if (!files.ContainsKey(entry.RelativePath))
+                    continue;
+
+                files[entry.RelativePath] = entry;
+                updated++;
+            }
+
+            if (updated == 0)
+                return;
+
+            await SaveAsync(snapshotsDirectory, stored.Data, cancellationToken);
+
+            // The file time is the snapshot's creation time shown to the user; an update must not make it look new.
+            File.SetLastWriteTime(GetFilePath(snapshotsDirectory, profileId), stored.CreatedAt);
         }
 
         private static string GetFilePath(string snapshotsDirectory, Guid profileId)
