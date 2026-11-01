@@ -1,6 +1,6 @@
 # Vortex Backup Tool - Current Implementation and Handoff
 
-Updated 2026-11-01. This is the current source of truth for a new Copilot chat. Other files in Documentation contain original rationale, human plans and an illustrative mockup. The user runs the app with Visual Studio F5; do not launch or automate it.
+Updated 2026-11-01. This is the current source of truth for a new AI assistant session (Claude, Copilot or any other) or a developer picking up the work. Other files in Documentation contain the original rationale, the original plan and an illustrative mockup. The user runs the app with Visual Studio F5; do not launch or automate it.
 
 This is a project handoff, not a verbatim transcript. It captures the important decisions and current state so work can continue without rediscovering or reimplementing completed features. The repository code and tests are authoritative if they differ from this document. Start by checking the worktree and the requested issue; do not replace the architecture or redo completed items below. The project is now in the **polish, finish remaining small functionality, and debug/validate** phase—not a fresh implementation or redesign phase. Keep changes surgical, preserve unrelated work, and run the narrowest relevant tests/build.
 
@@ -241,6 +241,6 @@ The legacy `IFileSystemProvider.EnumerateFilesAsync`/`IsSymlink`/`ResolveActualP
 
 ## Other Documentation files
 
-- `Basic info.txt`: original rationale (Ukrainian), updated with incremental backup, retry behavior, link handling, custom paths, logging, portable publish, the Game configs / Changed game files split, snapshot hashes, empty folder purge and the Install/Uninstall scripts.
-- `Vortex_Backup_Tool_Detailed_Human_Plan.docx`: original human-readable plan, retained as historical design input; this Markdown contains current status.
+- `Vortex_Backup_Tool_Rationale.txt`: original rationale (Ukrainian), updated with incremental backup, retry behavior, link handling, custom paths, logging, portable publish, the Game configs / Changed game files split, snapshot hashes, empty folder purge and the Install/Uninstall scripts.
+- `Vortex_Backup_Tool_Original_Plan.docx`: original human-readable plan, retained as historical design input; this Markdown contains current status.
 - `Vortex_Backup_Tool_Mockup.html`: illustrative UI updated with current defaults and labels; it is not the live UI specification.
