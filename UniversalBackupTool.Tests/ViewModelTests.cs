@@ -141,23 +141,23 @@ namespace UniversalBackupTool.Tests
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4", "Witcher 3");
 
-            Assert.That(viewModel.SelectAllButtonText, Is.EqualTo("Select all"));
+            Assert.That(viewModel.VortexTargets.SelectAllButtonText, Is.EqualTo("Select all"));
 
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
 
             Assert.Multiple(() =>
             {
                 Assert.That(viewModel.Targets.All(target => target.IsSelected), Is.True);
-                Assert.That(viewModel.SelectAllButtonText, Is.EqualTo("Deselect all"));
+                Assert.That(viewModel.VortexTargets.SelectAllButtonText, Is.EqualTo("Deselect all"));
                 Assert.That(viewModel.SelectedTargetsSummary, Is.EqualTo("3 of 3 selected"));
             });
 
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
 
             Assert.Multiple(() =>
             {
                 Assert.That(viewModel.Targets.Any(target => target.IsSelected), Is.False);
-                Assert.That(viewModel.SelectAllButtonText, Is.EqualTo("Select all"));
+                Assert.That(viewModel.VortexTargets.SelectAllButtonText, Is.EqualTo("Select all"));
             });
         }
 
@@ -167,11 +167,11 @@ namespace UniversalBackupTool.Tests
             var viewModel = await CreateBackupRestoreAsync("Skyrim", "Skyrim VR", "Fallout 4");
 
             viewModel.TargetFilter = "sky";
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
 
             Assert.Multiple(() =>
             {
-                Assert.That(viewModel.VisibleTargets.Select(target => target.GameName), Is.EquivalentTo(new[] { "Skyrim", "Skyrim VR" }));
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EquivalentTo(new[] { "Skyrim", "Skyrim VR" }));
                 Assert.That(viewModel.Targets.Where(target => target.IsSelected).Select(target => target.GameName), Is.EquivalentTo(new[] { "Skyrim", "Skyrim VR" }));
             });
 
@@ -200,7 +200,7 @@ namespace UniversalBackupTool.Tests
         public async Task FinishedBackup_DeselectsGames_AndKeepsComponentToggles()
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeStaging = true;
             viewModel.IncludeGameConfigs = true;
             viewModel.IncludeCustomFolders = true;
@@ -223,7 +223,7 @@ namespace UniversalBackupTool.Tests
         public async Task CancelledBackup_KeepsSelectionForRetry()
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim");
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeGameConfigs = true;
             _runner.OnRun = (_, _) => throw new OperationCanceledException();
 
@@ -241,7 +241,7 @@ namespace UniversalBackupTool.Tests
         public async Task StartBackup_WhileAnotherOperationRuns_IsRejected()
         {
             var viewModel = await CreateBackupRestoreAsync("Skyrim");
-            viewModel.ToggleSelectAllTargetsCommand.Execute(null);
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeStaging = true;
 
             using (_coordinator.TryBegin("Purge"))
@@ -522,9 +522,120 @@ namespace UniversalBackupTool.Tests
             await viewModel.StartBackupCommand.ExecuteAsync(null);
             Assert.That(_runner.LastOptions, Is.EqualTo(new BackupOptions(false, false, false, true)));
 
-            viewModel.Targets.Single(target => target.GameName == "ESO").IsSelected = true;
             viewModel.Targets.Single(target => target.GameName == "Skyrim").IsSelected = true;
-            Assert.That(viewModel.ShowVortexComponents, Is.True, "a Vortex game is selected too");
+            Assert.That(viewModel.ShowVortexComponents, Is.True, "a Vortex game is selected");
+        }
+
+        private async Task<BackupRestoreViewModel> CreateMixedBackupRestoreAsync()
+        {
+            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath,
+            [
+                new BackupProfile { GameName = "Skyrim", VortexStagingPath = Path.Combine(_root, "Skyrim") },
+                new BackupProfile { GameName = "Fallout 4", VortexStagingPath = Path.Combine(_root, "Fallout 4") },
+                new BackupProfile { GameName = "ESO", UsesVortex = false, CustomFolders = [Path.Combine(_root, "AddOns")] },
+                new BackupProfile { GameName = "Anno 1404", UsesVortex = false, GameRootPath = Path.Combine(_root, "Anno") }
+            ]);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            return viewModel;
+        }
+
+        [Test]
+        public async Task Picker_SplitsVortexAndOtherGames_EachWithItsOwnSelectAll()
+        {
+            var viewModel = await CreateMixedBackupRestoreAsync();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Fallout 4", "Skyrim" }));
+                Assert.That(viewModel.OtherTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Anno 1404", "ESO" }));
+                Assert.That(viewModel.VortexTargets.Summary, Is.EqualTo("0 of 2 selected"));
+            });
+
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.Targets.Where(target => target.IsSelected).Select(target => target.GameName), Is.EquivalentTo(new[] { "Skyrim", "Fallout 4" }));
+                Assert.That(viewModel.VortexTargets.SelectAllButtonText, Is.EqualTo("Deselect all"));
+                Assert.That(viewModel.OtherTargets.SelectAllButtonText, Is.EqualTo("Select all"));
+                Assert.That(viewModel.OtherTargets.IsLocked, Is.True, "other games are locked while Vortex games are selected");
+                Assert.That(viewModel.OtherTargets.ToggleSelectAllCommand.CanExecute(null), Is.False);
+                Assert.That(viewModel.OtherTargets.Targets.All(target => !target.IsSelectable), Is.True);
+                Assert.That(viewModel.OtherTargets.Summary, Does.Contain("clear the Vortex selection"));
+                Assert.That(viewModel.VortexTargets.IsLocked, Is.False);
+                Assert.That(viewModel.ShowVortexComponents, Is.True);
+            });
+
+            // Deselecting the group unlocks the other one; then only other games are picked.
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+            Assert.That(viewModel.OtherTargets.IsLocked, Is.False);
+
+            viewModel.OtherTargets.ToggleSelectAllCommand.Execute(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.Targets.Where(target => target.IsSelected).Select(target => target.GameName), Is.EquivalentTo(new[] { "ESO", "Anno 1404" }));
+                Assert.That(viewModel.VortexTargets.IsLocked, Is.True);
+                Assert.That(viewModel.VortexTargets.Targets.All(target => !target.IsSelectable), Is.True);
+                Assert.That(viewModel.ShowVortexComponents, Is.False);
+            });
+
+            viewModel.ClearTargetSelectionCommand.Execute(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.IsLocked, Is.False);
+                Assert.That(viewModel.OtherTargets.IsLocked, Is.False);
+                Assert.That(viewModel.Targets.All(target => target.IsSelectable), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task Picker_SearchFiltersBothGroups_AndSelectAllOnlyTakesMatchingGamesOfItsGroup()
+        {
+            var viewModel = await CreateMixedBackupRestoreAsync();
+
+            viewModel.TargetFilter = "o";
+            viewModel.OtherTargets.ToggleSelectAllCommand.Execute(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Fallout 4" }));
+                Assert.That(viewModel.OtherTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Anno 1404", "ESO" }));
+                Assert.That(viewModel.Targets.Where(target => target.IsSelected).Select(target => target.GameName), Is.EquivalentTo(new[] { "Anno 1404", "ESO" }));
+            });
+
+            viewModel.TargetFilter = "eso";
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.IsVisible, Is.False, "a group without matches is hidden");
+                Assert.That(viewModel.OtherTargets.IsVisible, Is.True);
+                Assert.That(viewModel.HasNoVisibleTargets, Is.False);
+            });
+
+            viewModel.TargetFilter = "nothing matches";
+            Assert.That(viewModel.HasNoVisibleTargets, Is.True);
+        }
+
+        [Test]
+        public async Task Backup_RefusesAMixedSelection()
+        {
+            var viewModel = await CreateMixedBackupRestoreAsync();
+            viewModel.IncludeGameConfigs = true;
+
+            // The UI never allows this (the other group is locked), but a mixed selection must not reach the runner.
+            viewModel.Targets.Single(target => target.GameName == "Skyrim").IsSelected = true;
+            viewModel.Targets.Single(target => target.GameName == "ESO").IsSelected = true;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.RunCount, Is.Zero);
+                Assert.That(_output.Entries.Any(entry => entry.Severity == OutputSeverity.Error && entry.Message.Contains("separate runs")), Is.True);
+            });
         }
 
         [Test]

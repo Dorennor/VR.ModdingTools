@@ -98,13 +98,9 @@
                                 VerticalAlignment="Center"
                                 Orientation="Horizontal">
                                 <ui:Button
-                                    Command="{Binding ToggleSelectAllTargetsCommand}"
-                                    Content="{Binding SelectAllButtonText}"
-                                    ToolTip="Select or deselect every game in the list (only the matching ones while searching)" />
-                                <ui:Button
-                                    Margin="8,0,0,0"
                                     Command="{Binding ClearTargetSelectionCommand}"
-                                    Content="Clear" />
+                                    Content="Clear"
+                                    ToolTip="Deselect every game in both groups" />
                             </StackPanel>
                         </Grid>
 
@@ -122,31 +118,74 @@
                                 BorderThickness="1"
                                 CornerRadius="{DynamicResource ControlCornerRadius}">
                                 <Grid>
+                                    <Grid.Resources>
+                                        <!--
+                                            One group of games (managed by Vortex / other games): a header with the group's
+                                            count and its own Select all, then the games in three columns. While games of the
+                                            other group are selected the group is locked (dimmed, checkboxes disabled).
+                                        -->
+                                        <DataTemplate x:Key="TargetSectionTemplate">
+                                            <StackPanel Margin="0,2,0,6" Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid Margin="4,2,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                                        <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding Title}" />
+                                                        <TextBlock
+                                                            Margin="12,0,0,0"
+                                                            VerticalAlignment="Center"
+                                                            Style="{StaticResource CaptionTextStyle}"
+                                                            Text="{Binding Summary}" />
+                                                    </StackPanel>
+                                                    <ui:Button
+                                                        Grid.Column="1"
+                                                        Command="{Binding ToggleSelectAllCommand}"
+                                                        Content="{Binding SelectAllButtonText}"
+                                                        ToolTip="Select or deselect every game of this group (only the matching ones while searching)" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding VisibleTargets}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <UniformGrid VerticalAlignment="Top" Columns="3" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox
+                                                                Margin="4,2"
+                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                IsEnabled="{Binding IsSelectable}"
+                                                                ToolTip="{Binding GameName}">
+                                                                <TextBlock Text="{Binding GameName}" TextTrimming="CharacterEllipsis">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsSelectable}" Value="False">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </CheckBox>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </Grid.Resources>
                                     <ScrollViewer
-                                        MaxHeight="232"
+                                        MaxHeight="320"
                                         helpers:NestedScrollBehavior.PassWheelAtEdges="True"
                                         HorizontalScrollBarVisibility="Disabled"
                                         VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding VisibleTargets}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <UniformGrid VerticalAlignment="Top" Columns="3" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <CheckBox
-                                                        Margin="4,2"
-                                                        IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                        ToolTip="{Binding GameName}">
-                                                        <TextBlock
-                                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                                            Text="{Binding GameName}"
-                                                            TextTrimming="CharacterEllipsis" />
-                                                    </CheckBox>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                        <StackPanel>
+                                            <ContentControl Content="{Binding VortexTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
+                                            <ContentControl Content="{Binding OtherTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
+                                        </StackPanel>
                                     </ScrollViewer>
                                     <TextBlock
                                         Margin="4,6"

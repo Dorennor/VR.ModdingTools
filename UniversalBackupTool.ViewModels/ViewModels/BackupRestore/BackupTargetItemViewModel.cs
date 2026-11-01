@@ -18,5 +18,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         [ObservableProperty]
         private bool _isSelected;
+
+        /// <summary>
+        /// False while games of the other section (Vortex / not Vortex) are selected; a backup never mixes the two.
+        /// </summary>
+        [ObservableProperty]
+        private bool _isSelectable = true;
     }
 }

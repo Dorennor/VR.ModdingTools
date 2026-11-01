@@ -80,17 +80,21 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         public ObservableCollection<BackupTargetItemViewModel> Targets { get; } = [];
 
         /// <summary>
-        /// Targets matching <see cref="TargetFilter"/>; this is what the profile picker shows. Selection lives on the items,
-        /// so filtering never changes what is selected.
+        /// The games managed by Vortex. A backup runs on one section only (see <see cref="BackupTargetSectionViewModel"/>).
         /// </summary>
-        public ObservableCollection<BackupTargetItemViewModel> VisibleTargets { get; } = [];
+        public BackupTargetSectionViewModel VortexTargets { get; } = new("Managed by Vortex", usesVortex: true, otherSectionName: "other games");
+
+        /// <summary>
+        /// The games not managed by Vortex.
+        /// </summary>
+        public BackupTargetSectionViewModel OtherTargets { get; } = new("Other games", usesVortex: false, otherSectionName: "Vortex");
 
         [ObservableProperty]
         private string _targetFilter = string.Empty;
 
         partial void OnTargetFilterChanged(string value) => RefreshVisibleTargets();
 
-        public bool HasNoVisibleTargets => Targets.Count > 0 && VisibleTargets.Count == 0;
+        public bool HasNoVisibleTargets => Targets.Count > 0 && !VortexTargets.IsVisible && !OtherTargets.IsVisible;
 
         public string SelectedTargetsSummary
         {
@@ -101,26 +105,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                 return Targets.Count == 0
                     ? "No profiles yet. Add one on the Profiles page."
                     : selected == 0
-                        ? $"None of {Targets.Count} selected"
+                        ? $"None of {Targets.Count} selected. Back up Vortex games and other games in separate runs."
                         : $"{selected} of {Targets.Count} selected";
             }
-        }
-
-        /// <summary>
-        /// True when every listed game (the filtered ones while searching) is selected; the button then deselects them.
-        /// </summary>
-        public bool AreAllVisibleTargetsSelected => VisibleTargets.Count > 0 && VisibleTargets.All(target => target.IsSelected);
-
-        public string SelectAllButtonText => AreAllVisibleTargetsSelected ? "Deselect all" : "Select all";
-
-        [RelayCommand]
-        private void ToggleSelectAllTargets()
-        {
-            // Acts on the games currently listed, so with a search it only affects the matching ones.
-            var select = !AreAllVisibleTargetsSelected;
-
-            foreach (var target in VisibleTargets)
-                target.IsSelected = select;
         }
 
         [RelayCommand]
@@ -138,34 +125,31 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
 
         private void NotifySelectionChanged()
         {
+            // Selecting in one section locks the other one; clearing the last selection unlocks both.
+            var vortexSelected = VortexTargets.HasSelection;
+            var otherSelected = OtherTargets.HasSelection;
+
+            VortexTargets.SetLocked(otherSelected && !vortexSelected);
+            OtherTargets.SetLocked(vortexSelected && !otherSelected);
+            VortexTargets.NotifySelectionChanged();
+            OtherTargets.NotifySelectionChanged();
+
             OnPropertyChanged(nameof(SelectedTargetsSummary));
-            OnPropertyChanged(nameof(AreAllVisibleTargetsSelected));
-            OnPropertyChanged(nameof(SelectAllButtonText));
             OnPropertyChanged(nameof(ShowVortexComponents));
         }
 
         /// <summary>
-        /// The Vortex components (staging, Vortex AppData) are offered while no game is selected or when at least one
-        /// selected game is managed by Vortex. With only non-Vortex games selected they are hidden and not backed up.
+        /// The Vortex components (staging, Vortex AppData) are offered while no game is selected or when Vortex games are
+        /// selected. With other games selected they are hidden and not backed up.
         /// </summary>
-        public bool ShowVortexComponents
-        {
-            get
-            {
-                var selected = Targets.Where(target => target.IsSelected).ToList();
-
-                return selected.Count == 0 || selected.Any(target => target.Profile.UsesVortex);
-            }
-        }
+        public bool ShowVortexComponents => !OtherTargets.HasSelection || VortexTargets.HasSelection;
 
         private void RefreshVisibleTargets()
         {
             var filter = TargetFilter.Trim();
 
-            VisibleTargets.Clear();
-
-            foreach (var target in Targets.Where(target => filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase)))
-                VisibleTargets.Add(target);
+            VortexTargets.Refresh(filter);
+            OtherTargets.Refresh(filter);
 
             OnPropertyChanged(nameof(HasNoVisibleTargets));
             NotifySelectionChanged();
@@ -306,12 +290,22 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                         target.PropertyChanged -= OnTargetPropertyChanged;
 
                     Targets.Clear();
+                    VortexTargets.Targets.Clear();
+                    OtherTargets.Targets.Clear();
 
                     foreach (var profile in _allProfiles.OrderBy(profile => profile.GameName, StringComparer.CurrentCultureIgnoreCase))
                     {
                         var target = new BackupTargetItemViewModel(profile, previouslySelected.Contains(profile.Id));
                         target.PropertyChanged += OnTargetPropertyChanged;
                         Targets.Add(target);
+                        (profile.UsesVortex ? VortexTargets : OtherTargets).Targets.Add(target);
+                    }
+
+                    // A profile switched between Vortex and not Vortex since the last load could leave a mixed selection.
+                    if (VortexTargets.HasSelection && OtherTargets.HasSelection)
+                    {
+                        foreach (var target in OtherTargets.Targets)
+                            target.IsSelected = false;
                     }
 
                     OnPropertyChanged(nameof(HasNoProfiles));
@@ -340,6 +334,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             if (selected.Count == 0)
             {
                 ReportError("Backup: select at least one profile.");
+                return;
+            }
+
+            if (selected.Any(profile => profile.UsesVortex) && selected.Any(profile => !profile.UsesVortex))
+            {
+                ReportError("Backup: back up games managed by Vortex and other games in separate runs. Clear the selection of one group first.");
                 return;
             }
 
