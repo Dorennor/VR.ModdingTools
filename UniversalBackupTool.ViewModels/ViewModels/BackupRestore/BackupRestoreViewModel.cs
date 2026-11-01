@@ -137,6 +137,21 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             OnPropertyChanged(nameof(SelectedTargetsSummary));
             OnPropertyChanged(nameof(AreAllVisibleTargetsSelected));
             OnPropertyChanged(nameof(SelectAllButtonText));
+            OnPropertyChanged(nameof(ShowVortexComponents));
+        }
+
+        /// <summary>
+        /// The Vortex components (staging, Vortex AppData) are offered while no game is selected or when at least one
+        /// selected game is managed by Vortex. With only non-Vortex games selected they are hidden and not backed up.
+        /// </summary>
+        public bool ShowVortexComponents
+        {
+            get
+            {
+                var selected = Targets.Where(target => target.IsSelected).ToList();
+
+                return selected.Count == 0 || selected.Any(target => target.Profile.UsesVortex);
+            }
         }
 
         private void RefreshVisibleTargets()
@@ -309,7 +324,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private async Task StartBackupAsync()
         {
             var selected = Targets.Where(target => target.IsSelected).Select(target => target.Profile).ToList();
-            var options = new BackupOptions(IncludeStaging, IncludeGameConfigs, IncludeVortexAppData, IncludeCustomFolders, IncludeGameChanges: IncludeGameChanges);
+            // Hidden Vortex toggles (only non-Vortex games selected) keep their value for later but are not used.
+            var vortex = ShowVortexComponents;
+            var options = new BackupOptions(
+                IncludeStaging && vortex,
+                IncludeGameConfigs,
+                IncludeVortexAppData && vortex,
+                IncludeCustomFolders,
+                IncludeGameChanges: IncludeGameChanges);
 
             if (selected.Count == 0)
             {
@@ -487,7 +509,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     ReportInfo($"{result.GameName}: game folder ignore list skipped {result.IgnoredFiles:N0} file(s), e.g. {string.Join(", ", result.IgnoredExamples)}");
             }
 
-            foreach (var warning in batch.Results.SelectMany(result => result.Warnings))
+            foreach (var warning in batch.Results.SelectMany(result => result.Warnings).Concat(batch.Warnings))
                 ReportWarning(warning);
 
             ReportSuccess($"Backup finished: {batch.ModsArchived:N0} changed/new mod(s) archived, {batch.ModsReused:N0} unchanged mod archive(s) reused, {batch.ModsRemoved:N0} removed mod(s) omitted from the new snapshot; {batch.FilesArchived:N0} file(s) written to {settings.GoogleDriveBackupPath}.");

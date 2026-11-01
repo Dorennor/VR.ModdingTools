@@ -77,6 +77,7 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             var results = new List<BackupResult>();
             var failedFiles = new List<FailedBackupFile>();
+            var batchWarnings = new List<string>();
 
             for (var index = 0; index < profiles.Count; index++)
             {
@@ -86,8 +87,15 @@ namespace UniversalBackupTool.Service.Services.Backups
                 var profilePrefix = profiles.Count > 1 ? $"{profile.GameName} ({index + 1}/{profiles.Count})" : profile.GameName;
                 var profileResults = new List<BackupResult>();
                 var skippedComponentWarnings = new List<string>();
+                var componentList = ExpandPerComponentOptions(options, profile);
 
-                foreach (var componentOptions in ExpandPerComponentOptions(options))
+                if (componentList.Count == 0)
+                {
+                    batchWarnings.Add($"\"{profile.GameName}\" was skipped: it is not managed by Vortex, so the staging and Vortex AppData components do not apply to it.");
+                    continue;
+                }
+
+                foreach (var componentOptions in componentList)
                 {
                     var componentLabel = DescribeComponent(componentOptions);
                     var prefix = $"{profilePrefix} - {componentLabel}";
@@ -118,6 +126,9 @@ namespace UniversalBackupTool.Service.Services.Backups
                 failedFiles.AddRange(profileResults.SelectMany(result => result.FailedFiles));
             }
 
+            if (results.Count == 0)
+                throw new InvalidOperationException(string.Join(" ", batchWarnings.DefaultIfEmpty("Nothing to back up.")));
+
             if (failedFiles.Count > 0)
             {
                 var firstFailed = results.First(result => result.FailedFiles.Count > 0);
@@ -136,14 +147,18 @@ namespace UniversalBackupTool.Service.Services.Backups
                 await _backupJobStateService.SaveAsync(job, cancellationToken);
             }
 
-            return new BackupBatchResult(results, failedFiles, results.Sum(result => result.FilesArchived));
+            return new BackupBatchResult(results, failedFiles, results.Sum(result => result.FilesArchived)) { Warnings = batchWarnings };
         }
 
-        private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options)
+        /// <summary>
+        /// One option set per selected component that applies to the profile: staging and Vortex AppData only apply to
+        /// games managed by Vortex.
+        /// </summary>
+        private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options, BackupProfile profile)
         {
             var expanded = new List<BackupOptions>();
 
-            if (options.IncludeStaging)
+            if (options.IncludeStaging && profile.UsesVortex)
                 expanded.Add(new BackupOptions(true, false, false, false, options.Monolithic));
 
             if (options.IncludeGameConfigs)
@@ -152,7 +167,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (options.IncludeGameChanges)
                 expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameChanges: true));
 
-            if (options.IncludeVortexAppData)
+            if (options.IncludeVortexAppData && profile.UsesVortex)
                 expanded.Add(new BackupOptions(false, false, true, false, options.Monolithic));
 
             if (options.IncludeCustomFolders)

@@ -23,11 +23,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         public bool UseIgnoreList => Profile.UseIgnoreList;
 
-        public bool HasVortexStagingPath => !string.IsNullOrWhiteSpace(Profile.VortexStagingPath);
+        public bool UsesVortex => Profile.UsesVortex;
+
+        public bool HasVortexStagingPath => Profile.UsesVortex && !string.IsNullOrWhiteSpace(Profile.VortexStagingPath);
 
         public bool HasGameRootPath => !string.IsNullOrWhiteSpace(Profile.GameRootPath);
 
-        public bool HasVortexAppDataPath => !string.IsNullOrWhiteSpace(Profile.VortexAppDataPath);
+        public bool HasVortexAppDataPath => Profile.UsesVortex && !string.IsNullOrWhiteSpace(Profile.VortexAppDataPath);
 
         public bool HasCustomFolders => Profile.CustomFolders.Count > 0;
 

@@ -118,10 +118,21 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
+                        Description="Turn off for games whose mods are not managed by Vortex (for example ESO add-ons or Anno 1404). The profile then has no staging or Vortex AppData folder, and those backup components are not offered for it."
+                        Header="Managed by Vortex"
+                        Icon="{ui:SymbolIcon PuzzlePiece24}">
+                        <ui:ToggleSwitch
+                            IsChecked="{Binding EditUsesVortex, Mode=TwoWay}"
+                            OffContent="No"
+                            OnContent="Yes" />
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
                         Description="Vortex mod staging folder. Each top-level mod folder becomes its own archive."
                         Header="Vortex staging folder"
                         Icon="{ui:SymbolIcon Archive24}"
-                        IsStacked="True">
+                        IsStacked="True"
+                        Visibility="{Binding EditUsesVortex, Converter={StaticResource BoolToVisibility}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -177,7 +188,8 @@
                         Description="Vortex settings, profiles and load order. Usually %APPDATA%\Vortex."
                         Header="Vortex AppData folder"
                         Icon="{ui:SymbolIcon Storage24}"
-                        IsStacked="True">
+                        IsStacked="True"
+                        Visibility="{Binding EditUsesVortex, Converter={StaticResource BoolToVisibility}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -340,11 +352,18 @@
                                             FontSize="20"
                                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                             Symbol="Games24" />
-                                        <TextBlock
+                                        <StackPanel
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
-                                            Style="{StaticResource BodyStrongTextStyle}"
-                                            Text="{Binding GameName}" />
+                                            Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding GameName}" />
+                                            <TextBlock
+                                                Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Style="{StaticResource CaptionTextStyle}"
+                                                Text="without Vortex"
+                                                Visibility="{Binding UsesVortex, Converter={StaticResource InverseBoolToVisibility}}" />
+                                        </StackPanel>
                                         <StackPanel Grid.Column="2" Orientation="Horizontal">
                                             <Button
                                                 Command="{Binding DataContext.EditProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"

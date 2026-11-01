@@ -341,6 +341,82 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Dashboard_ProfileWithoutVortex_SavesNoVortexPaths_AndOldProfilesLoadAsVortex()
+        {
+            var game = Directory.CreateDirectory(Path.Combine(_root, "Anno 1404")).FullName;
+            File.WriteAllText(_paths.GetPaths().ProfilesFilePath, """[ { "GameName": "Skyrim", "VortexStagingPath": "D:\\Staging" } ]""");
+
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.That(viewModel.Profiles.Single().UsesVortex, Is.True, "profiles saved before the setting are Vortex profiles");
+
+            viewModel.AddProfileCommand.Execute(null);
+            viewModel.EditGameName = "Anno 1404";
+            viewModel.EditVortexStagingPath = @"D:\Staging";
+            viewModel.EditGameRootPath = game;
+            viewModel.EditUsesVortex = false;
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            var anno = (await new JsonProfileStore().LoadAsync(_paths.GetPaths().ProfilesFilePath)).Single(profile => profile.GameName == "Anno 1404");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(anno.UsesVortex, Is.False);
+                Assert.That(anno.VortexStagingPath, Is.Null);
+                Assert.That(anno.VortexAppDataPath, Is.Null);
+                Assert.That(anno.GameRootPath, Is.EqualTo(game));
+                Assert.That(viewModel.Profiles.Single(item => item.GameName == "Anno 1404").HasVortexStagingPath, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task Dashboard_ProfileWithoutVortex_NeedsGameFolderOrCustomPath()
+        {
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            viewModel.AddProfileCommand.Execute(null);
+            viewModel.EditGameName = "ESO";
+            viewModel.EditVortexStagingPath = @"D:\Staging";   // hidden once Vortex is off, so it does not count
+            viewModel.EditUsesVortex = false;
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.Profiles, Is.Empty);
+                Assert.That(_output.Entries.Any(entry => entry.Severity == OutputSeverity.Error && entry.Message.Contains("game folder or a custom path")), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task Backup_VortexComponents_HiddenAndNotUsed_WhenOnlyNonVortexGamesAreSelected()
+        {
+            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath,
+            [
+                new BackupProfile { GameName = "Skyrim", VortexStagingPath = Path.Combine(_root, "Skyrim") },
+                new BackupProfile { GameName = "ESO", UsesVortex = false, CustomFolders = [Path.Combine(_root, "AddOns")] }
+            ]);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            viewModel.IncludeStaging = true;
+            viewModel.IncludeVortexAppData = true;
+            viewModel.IncludeCustomFolders = true;
+
+            Assert.That(viewModel.ShowVortexComponents, Is.True, "nothing selected yet");
+
+            viewModel.Targets.Single(target => target.GameName == "ESO").IsSelected = true;
+            Assert.That(viewModel.ShowVortexComponents, Is.False);
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.LastOptions, Is.EqualTo(new BackupOptions(false, false, false, true)));
+
+            viewModel.Targets.Single(target => target.GameName == "ESO").IsSelected = true;
+            viewModel.Targets.Single(target => target.GameName == "Skyrim").IsSelected = true;
+            Assert.That(viewModel.ShowVortexComponents, Is.True, "a Vortex game is selected too");
+        }
+
+        [Test]
         public void CustomPathItem_DetectsMissingPaths_AndSwapsDrive()
         {
             var item = new CustomPathItemViewModel(@"D:\Games\Missing\settings.ini", new PathDriveService(new FakeDrives()));

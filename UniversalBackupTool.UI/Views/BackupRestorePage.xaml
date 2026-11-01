@@ -157,9 +157,10 @@
                 </Border>
 
                 <controls:SettingsCard
-                    Description="One archive per mod. Unchanged mods reuse their previous archive, so only updated mods are packed again."
+                    Description="One archive per mod. Unchanged mods reuse their previous archive, so only updated mods are packed again. Only for games managed by Vortex."
                     Header="Staging folders"
-                    Icon="{ui:SymbolIcon Archive24}">
+                    Icon="{ui:SymbolIcon Archive24}"
+                    Visibility="{Binding ShowVortexComponents, Converter={StaticResource BoolToVisibility}}">
                     <ui:ToggleSwitch
                         IsChecked="{Binding IncludeStaging, Mode=TwoWay}"
                         OffContent="Off"
@@ -187,9 +188,10 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Vortex settings, profiles and load order."
+                    Description="Vortex settings, profiles and load order. Only for games managed by Vortex."
                     Header="Vortex AppData"
-                    Icon="{ui:SymbolIcon Storage24}">
+                    Icon="{ui:SymbolIcon Storage24}"
+                    Visibility="{Binding ShowVortexComponents, Converter={StaticResource BoolToVisibility}}">
                     <ui:ToggleSwitch
                         IsChecked="{Binding IncludeVortexAppData, Mode=TwoWay}"
                         OffContent="Off"

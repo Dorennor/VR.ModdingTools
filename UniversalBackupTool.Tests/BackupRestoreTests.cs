@@ -592,6 +592,31 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task Backup_ProfileWithoutVortex_GetsNoVortexComponents_AndIsSkippedWhenNothingElseApplies()
+        {
+            Write("ModA/a.txt", "A");
+            var addOns = Directory.CreateDirectory(Path.Combine(_root, "AddOns")).FullName;
+            File.WriteAllText(Path.Combine(addOns, "addon.lua"), "lua");
+
+            // A stale staging path must be ignored once the profile is not managed by Vortex.
+            var eso = CreateProfile() with { GameName = "ESO", UsesVortex = false, CustomFolders = [addOns] };
+            var skyrim = CreateProfile() with { GameName = "Skyrim" };
+
+            var withCustom = await _runner.RunBackupAsync([eso], new BackupOptions(true, false, true, true), _settings);
+            var stagingOnly = await _runner.RunBackupAsync([eso, skyrim], StagingOnly(), _settings);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(withCustom.Results.Single().BackupDirectory, Does.Contain(Path.Combine("ESO", "custom")));
+                Assert.That(Directory.Exists(Path.Combine(_settings.GoogleDriveBackupPath, "ESO", "staging")), Is.False);
+                Assert.That(stagingOnly.Results.Single().GameName, Is.EqualTo("Skyrim"));
+                Assert.That(stagingOnly.Warnings.Single(), Does.Contain("\"ESO\" was skipped"));
+                Assert.That(async () => await _runner.RunBackupAsync([eso], StagingOnly(), _settings),
+                    Throws.InstanceOf<InvalidOperationException>().With.Message.Contains("not managed by Vortex"));
+            });
+        }
+
+        [Test]
         public void Backup_WithoutBackupPath_Throws()
         {
             Write("ModA/a.txt", "A");

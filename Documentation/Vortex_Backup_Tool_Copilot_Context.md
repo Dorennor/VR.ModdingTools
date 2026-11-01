@@ -17,6 +17,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Theme: `AppSettings.Theme` (`AppTheme` System/Light/Dark, default System) is applied at startup via `IThemeService` (`UI/Services/ThemeService.cs`, WPF-UI `ApplicationThemeManager`/`SystemThemeWatcher`). The Settings "App theme" row applies and saves it immediately; it is not part of the Save button.
 - Settings page: app theme, backup destination, safety backups, compression rules, retention and global ignore patterns.
 - Profiles page (`DashboardPage`, nav label "Profiles"): JSON profiles, editable paths, new-profile default `%APPDATA%\Vortex`, per-path drive swap and Find on other disk. No global drive-letter rewrite.
+- Profiles without Vortex (added 2026-11-01): `BackupProfile.UsesVortex` (default true, so older profiles load as Vortex profiles). The editor has a "Managed by Vortex" switch; when off, the staging and Vortex AppData rows are hidden, both paths are saved as null, validation asks for a game folder or a custom path, and the list shows "without Vortex" and no Vortex paths (Find on other disk skips them too). Turning it back on proposes `%APPDATA%\Vortex`. Backup & Restore shows the Staging/Vortex AppData cards only when no game or at least one Vortex game is selected (`ShowVortexComponents`); hidden toggles keep their value but are not passed to the runner. `BackupJobRunner.ExpandPerComponentOptions(options, profile)` never applies staging/AppData to a non-Vortex profile; a profile with no applicable component is skipped with a note in `BackupBatchResult.Warnings` (the batch throws only when no profile has anything to back up). Restore needs no change: such games have no staging/AppData backups.
 - Every game list is sorted by game name (current culture, case-insensitive): Profiles page (`DashboardViewModel.ReplaceProfiles`, so also after add/edit/delete; the Find-on-other-disk path list follows it), Vanilla & Purge and the Backup & Restore picker (added 2026-11-01).
 - Custom paths (added 2026-10-31): a profile has any number of custom path entries, each a folder **or a single file** (no wildcards), stored in `BackupProfile.CustomFolders` (name kept for JSON compatibility).
   - Editor: list rows (`CustomPathItemViewModel`: path, File/Folder/Not found, drive swap) with Add folder, Add files (multi-select `IFilePickerService`) and remove; duplicates are ignored.
@@ -101,7 +102,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - `.pending` temp archives are never deleted by retention, so a discarded job's temp files stay until removed manually.
 - Safety backup retention compares UTC file times with UTC now; it previously mixed UTC and local time.
 - Paused job file: `BackupJobStateService` (DI constructor) saves to `AppStoragePaths.ActiveBackupJobFilePath`, the same path the app loads from. It writes via a temporary file and atomic replace; an unreadable job file loads as "no paused job".
-- Last checked 2026-11-01: solution build succeeded; 200 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
+- Last checked 2026-11-01: solution build succeeded; 204 NUnit tests passed. Realistic F5 testing with the user's Vortex data and large files remains necessary.
 
 ## Settled decisions — do not reopen without asking
 
@@ -110,6 +111,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
 - Retention cleanup is intended: keep the newest `MaxPreservedBackupsPerGame` snapshots per component and delete `_archives` zips that no retained manifest references. Changes to it must stay reference-aware: never delete an archive that a retained snapshot uses.
 - Avoid rereading unchanged large files on every backup. The chosen policy is metadata-first comparison and SHA-256 during reads already needed for archive creation; when relevant metadata changes, hash while creating a candidate archive and reuse the prior archive if content hashes match. Do not silently claim byte-for-byte detection for edits that preserve all compared metadata.
 - On new profiles, default Vortex AppData to `%APPDATA%\Vortex`, but keep it editable. Do not select profiles by default in Backup & Restore. All backup components start off and are opt-in; a finished backup deselects the games but never resets the component toggles (user decision 2026-11-01).
+- Profiles can be marked as not managed by Vortex; Vortex paths and components are then neither asked for nor offered, and never backed up for that game.
 - Game lists are sorted by game name on every page.
 - Game configs = new files only (paths missing from the snapshot, like the purge preview). Changed game files = every difference (new + content-modified files) as one self-contained archive with links stored as real files, so it can be shared and unpacked into another game folder (user decision 2026-11-01).
 - Modified game files are judged by content: the snapshot stores SHA-256 hashes, rewritten-but-identical files are not "changed", and their new timestamps are saved into the baseline so they are hashed only once.
@@ -161,7 +163,7 @@ Key implementation files:
   - `SnapshotContentHashTests.cs`: snapshot hashes, content-verified comparison, re-anchoring, store updates keeping the creation time;
   - `PurgeFolderTests.cs`: recorded folders, empty folder removal, older snapshots without folders;
   - `LoggingTests.cs`, `PortableSettingsTests.cs`, `OperationServicesTests.cs`;
-  - `ViewModelTests.cs`: profile picker toggle, components off by default and kept after a backup, operation rejection, theme save, custom paths editor;
+  - `ViewModelTests.cs`: profile picker toggle, components off by default and kept after a backup, profiles without Vortex (editor and hidden Vortex components), operation rejection, theme save, custom paths editor;
   - `ServiceTests.cs`, `ProfileStoreTests.cs`, `SnapshotStoreTests.cs`, `PathDriveServiceTests.cs`.
 
 There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTool.Models/Models/*.cs` (root level), `UniversalBackupTool.Services/Interfaces/*.cs`, `UniversalBackupTool.Interfaces/UniversalBackupTool.Interfaces.csproj` and `UniversalBackupTool.Tests/ServiceLayerTests.cs`. `Services/Implementations/*` no longer exists. Legacy `IBackupEngine`/`BackupEngine` is still registered in DI. The UI is wired to `IBackupJobRunner`/`BackupJobRunner`. Do not delete or migrate legacy code without checking references and tests; legacy restore compatibility is intentional.
@@ -188,7 +190,8 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
      - Changed game files after a same-version reinstall skip identical files and report re-anchored timestamps; a second run hashes nothing;
      - Changed game files archive unpacked into a clean game folder gives a working modded game (links as real files);
      - status bar counters stay visible with long phase texts and at the minimum window width;
-     - sorted game lists; toggles kept after a backup.
+     - sorted game lists; toggles kept after a backup;
+     - a non-Vortex profile (ESO, Anno 1404): editor rows hidden, Vortex components hidden in Backup & Restore, mixed selection skips it with a note.
 2. Optional: "Export for sharing": one zip with Changed game files plus custom paths under a clear name, and a text list of deleted vanilla files.
 3. Optional: clean up `.pending` temp archives left by discarded jobs (reference-aware; never touch an active job's pending files).
 4. Optional: Continue Backup reopens pending archives with `ZipArchiveMode.Update`, which rewrites the archive and can be slow or memory-heavy for multi-GB mods; consider a streaming alternative.
@@ -203,7 +206,7 @@ There are empty (0-byte) leftover files still tracked in git: `UniversalBackupTo
 - log files, portable settings paths;
 - ViewModel behaviour.
 
-The last reported automated test run was 200 passing NUnit tests on 2026-11-01. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
+The last reported automated test run was 204 passing NUnit tests on 2026-11-01. Headless XAML smoke checks (pages and window built without being shown) found no XAML or binding errors.
 
 **Not established by those unit tests:**
 - the Output panel and cross-page operation behaviour in the real WPF app, including UI-thread marshalling under a real dispatcher;

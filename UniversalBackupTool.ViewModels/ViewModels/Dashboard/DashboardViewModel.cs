@@ -67,6 +67,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [ObservableProperty]
         private string _editGameName = string.Empty;
 
+        /// <summary>
+        /// Off for games whose mods Vortex does not manage: the staging and Vortex AppData rows are hidden and not saved.
+        /// </summary>
+        [ObservableProperty]
+        private bool _editUsesVortex = true;
+
         [ObservableProperty]
         private string _editVortexStagingPath = string.Empty;
 
@@ -145,6 +151,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             _editingOriginal = null;
 
             EditGameName = string.Empty;
+            EditUsesVortex = true;
             EditVortexStagingPath = string.Empty;
             EditGameRootPath = string.Empty;
             EditVortexAppDataPath = _systemPathsProvider.GetDefaultVortexAppDataPath();
@@ -168,9 +175,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             _editingOriginal = profile;
 
             EditGameName = profile.GameName;
+            EditUsesVortex = profile.UsesVortex;
             EditVortexStagingPath = profile.VortexStagingPath ?? string.Empty;
             EditGameRootPath = profile.GameRootPath ?? string.Empty;
-            EditVortexAppDataPath = profile.VortexAppDataPath ?? string.Empty;
+
+            // Switching Vortex on for a non-Vortex profile proposes the usual AppData folder, like a new profile does.
+            EditVortexAppDataPath = profile.VortexAppDataPath
+                ?? (profile.UsesVortex ? string.Empty : _systemPathsProvider.GetDefaultVortexAppDataPath());
             SetEditCustomPaths(profile.CustomFolders);
             EditUseIgnoreList = profile.UseIgnoreList;
 
@@ -204,9 +215,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     var edited = (_editingOriginal ?? new BackupProfile()) with
                     {
                         GameName = EditGameName.Trim(),
-                        VortexStagingPath = NullIfEmpty(EditVortexStagingPath),
+                        UsesVortex = EditUsesVortex,
+
+                        // A profile without Vortex keeps no Vortex paths, so nothing offers or backs them up.
+                        VortexStagingPath = EditUsesVortex ? NullIfEmpty(EditVortexStagingPath) : null,
                         GameRootPath = NullIfEmpty(EditGameRootPath),
-                        VortexAppDataPath = NullIfEmpty(EditVortexAppDataPath),
+                        VortexAppDataPath = EditUsesVortex ? NullIfEmpty(EditVortexAppDataPath) : null,
                         CustomFolders = customFolders,
                         UseIgnoreList = EditUseIgnoreList
                     };
@@ -391,9 +405,13 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
             foreach (var profile in Profiles.Select(item => item.Profile))
             {
-                AddFindable(profile, ProfilePathKind.VortexStaging, profile.VortexStagingPath);
+                if (profile.UsesVortex)
+                    AddFindable(profile, ProfilePathKind.VortexStaging, profile.VortexStagingPath);
+
                 AddFindable(profile, ProfilePathKind.GameRoot, profile.GameRootPath);
-                AddFindable(profile, ProfilePathKind.VortexAppData, profile.VortexAppDataPath);
+
+                if (profile.UsesVortex)
+                    AddFindable(profile, ProfilePathKind.VortexAppData, profile.VortexAppDataPath);
 
                 foreach (var folder in profile.CustomFolders)
                     AddFindable(profile, ProfilePathKind.CustomFolder, folder);
@@ -467,11 +485,15 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             if (duplicate)
                 return $"A profile named \"{name}\" already exists.";
 
-            if (string.IsNullOrWhiteSpace(EditVortexStagingPath) &&
+            var hasStaging = EditUsesVortex && !string.IsNullOrWhiteSpace(EditVortexStagingPath);
+
+            if (!hasStaging &&
                 string.IsNullOrWhiteSpace(EditGameRootPath) &&
                 customFolders.Count == 0)
             {
-                return "Specify at least one source: Vortex staging folder, game folder or a custom path.";
+                return EditUsesVortex
+                    ? "Specify at least one source: Vortex staging folder, game folder or a custom path."
+                    : "Specify at least one source: game folder or a custom path.";
             }
 
             return null;
