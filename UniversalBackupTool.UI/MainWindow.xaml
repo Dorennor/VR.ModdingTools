@@ -14,6 +14,7 @@
     MinHeight="600"
     ExtendsContentIntoTitleBar="True"
     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+    Icon="pack://application:,,,/Assets/AppIcon.ico"
     WindowBackdropType="Mica"
     WindowCornerPreference="Round"
     WindowStartupLocation="CenterScreen"
@@ -26,7 +27,10 @@
 
         <ui:TitleBar Title="{Binding ApplicationTitle}" Grid.Row="0">
             <ui:TitleBar.Icon>
-                <ui:SymbolIcon Symbol="Shield24" />
+                <ui:ImageIcon
+                    Width="16"
+                    Height="16"
+                    Source="pack://application:,,,/Assets/AppIcon.ico" />
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
