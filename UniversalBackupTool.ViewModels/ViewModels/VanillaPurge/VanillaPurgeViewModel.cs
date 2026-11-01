@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
+using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Snapshots;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Profiles;
@@ -22,6 +23,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         private readonly ISnapshotStore _snapshotStore;
         private readonly IAppStoragePathsProvider _storagePathsProvider;
         private readonly IConfirmationService _confirmationService;
+        private readonly ISettingsStore _settingsStore;
+        private readonly ITrackedFilesPurgeService _trackedFilesPurgeService;
 
         private StoredSnapshot? _currentSnapshot;
 
@@ -31,10 +34,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
             ISnapshotStore snapshotStore,
             IAppStoragePathsProvider storagePathsProvider,
             IConfirmationService confirmationService,
+            ISettingsStore settingsStore,
+            ITrackedFilesPurgeService trackedFilesPurgeService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
         {
+            _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+            _trackedFilesPurgeService = trackedFilesPurgeService ?? throw new ArgumentNullException(nameof(trackedFilesPurgeService));
             _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
             _snapshotService = snapshotService ?? throw new ArgumentNullException(nameof(snapshotService));
             _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
@@ -229,6 +236,189 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
                 if (result.FoldersKept > 0)
                     ReportWarning($"{target.Profile.GameName}: {result.FoldersKept:N0} folder(s) not in the snapshot were kept because they are not empty or could not be removed (in use or access denied).");
             });
+        }
+
+        [RelayCommand]
+        private async Task PreviewTrackedAsync()
+        {
+            var target = GetPurgeTarget();
+
+            if (target is null)
+                return;
+
+            await RunOperationAsync("Tracked Purge Preview", async scope =>
+            {
+                var plan = await BuildTrackedPlanAsync(target, scope);
+
+                if (plan is null)
+                    return;
+
+                ShowTrackedPreviewIfStillSelected(target, plan);
+                ReportTrackedPlan(target, plan);
+            });
+        }
+
+        [RelayCommand]
+        private async Task PurgeTrackedAsync()
+        {
+            var target = GetPurgeTarget();
+
+            if (target is null)
+                return;
+
+            await RunOperationAsync("Tracked Purge", async scope =>
+            {
+                var plan = await BuildTrackedPlanAsync(target, scope);
+
+                if (plan is null)
+                    return;
+
+                ShowTrackedPreviewIfStillSelected(target, plan);
+                ReportTrackedPlan(target, plan);
+
+                var removeCount = plan.Count(TrackedFileStatus.Remove);
+
+                if (removeCount == 0 && plan.Folders.Count == 0)
+                {
+                    ReportSuccess($"{target.Profile.GameName}: nothing to purge, no file from the backups is left unchanged in the game folder.");
+                    return;
+                }
+
+                var confirmed = _confirmationService.Confirm(
+                    "Purge tracked files",
+                    $"{removeCount:N0} file(s) from the backups of {target.Profile.GameName} will be deleted from:\n{target.RootPath}\n"
+                    + (plan.Folders.Count > 0 ? $"and up to {plan.Folders.Count:N0} folder(s) recorded in the backups, if they are empty afterwards.\n" : string.Empty)
+                    + "\nOnly files whose content still matches the backup are deleted. Original game files, Vortex links (purge them in Vortex) and files changed since the backup are kept.\n"
+                    + "A Safety Backup of the deleted files is created first. Continue?");
+
+                if (!confirmed)
+                {
+                    ReportInfo("Tracked purge was not confirmed; nothing was deleted.");
+                    return;
+                }
+
+                scope.Report(new("creating safety backup and deleting files", null, 0, 0, 0, removeCount));
+
+                var result = await Task.Run(() => _trackedFilesPurgeService.PurgeAsync(plan, scope.CancellationToken), scope.CancellationToken);
+
+                if (SelectedProfile?.Profile.Id == target.Profile.Id)
+                    ClearPreview();
+
+                if (result.SafetyBackupPath is not null)
+                    ReportInfo($"Deleted files were saved to {result.SafetyBackupPath}");
+
+                var folders = result.FoldersRemoved > 0 ? $", {result.FoldersRemoved:N0} empty folder(s) removed" : string.Empty;
+                ReportSuccess($"Tracked purge completed for {target.Profile.GameName}: {result.FilesDeleted:N0} file(s) deleted{folders}.");
+
+                if (result.FilesKept.Count > 0)
+                {
+                    ReportWarning($"{target.Profile.GameName}: {result.FilesKept.Count:N0} file(s) were kept because they changed since the preview, are in use or access was denied:");
+
+                    foreach (var path in result.FilesKept.Take(20))
+                        ReportWarning("    " + path);
+                }
+
+                if (result.FoldersKept > 0)
+                    ReportInfo($"{target.Profile.GameName}: {result.FoldersKept:N0} folder(s) from the backups were kept because they still hold files.");
+
+                ReportInfo("Next: let the game update (verify the game files if original files were reported), create a new vanilla snapshot, deploy the mods in Vortex and restore the configs.");
+            });
+        }
+
+        /// <summary>
+        /// The plan from the newest complete Changed game files and Game configs backups, or null (with an error) when the
+        /// backup destination is not set or the game has no such backup.
+        /// </summary>
+        private async Task<TrackedPurgePlan?> BuildTrackedPlanAsync(PurgeTarget target, IOperationScope scope)
+        {
+            var settings = await _settingsStore.LoadAsync(_storagePathsProvider.GetPaths().SettingsFilePath, scope.CancellationToken);
+
+            if (string.IsNullOrWhiteSpace(settings.GoogleDriveBackupPath))
+            {
+                ReportError("The backup destination folder is not configured. Set it on the Settings page.");
+                return null;
+            }
+
+            scope.Report(new($"reading the backups of {target.Profile.GameName}", null, 0, 0, 0, 0));
+
+            var plan = await Task.Run(
+                () => _trackedFilesPurgeService.BuildPlanAsync(target.Profile, target.RootPath, target.Snapshot, settings.GoogleDriveBackupPath, scope, scope.CancellationToken),
+                scope.CancellationToken);
+
+            if (!plan.HasBackups)
+            {
+                ReportError($"{target.Profile.GameName}: no complete Changed game files or Game configs backup found in {settings.GoogleDriveBackupPath}. Back up one of them first.");
+                return null;
+            }
+
+            return plan;
+        }
+
+        private void ReportTrackedPlan(PurgeTarget target, TrackedPurgePlan plan)
+        {
+            foreach (var backup in plan.Backups)
+                ReportInfo($"{target.Profile.GameName}: using the backup of {backup.Manifest.CreatedAt:g} in {backup.Directory}");
+
+            ReportInfo($"{target.Profile.GameName}: {DescribeTrackedPlan(plan)}");
+
+            if (plan.Count(TrackedFileStatus.VortexLink) > 0)
+                ReportWarning($"{target.Profile.GameName}: {plan.Count(TrackedFileStatus.VortexLink):N0} Vortex link(s) are still deployed. Purge the mods in Vortex first; this purge leaves links to Vortex.");
+
+            if (plan.Count(TrackedFileStatus.OriginalGameFile) > 0)
+                ReportWarning($"{target.Profile.GameName}: {plan.Count(TrackedFileStatus.OriginalGameFile):N0} original game file(s) were overwritten by mods and are kept. Verify the game files (Steam: Verify integrity) to get the original versions back.");
+
+            if (target.Snapshot.Directories is null && plan.Folders.Count > 0)
+                ReportWarning($"{target.Profile.GameName}: this snapshot was created before folders were recorded, so an empty vanilla folder may count as a mod folder. Check the folder list.");
+        }
+
+        private static string DescribeTrackedPlan(TrackedPurgePlan plan)
+        {
+            var kept = new List<string>();
+
+            void AddKept(TrackedFileStatus status, string label)
+            {
+                var count = plan.Count(status);
+
+                if (count > 0)
+                    kept.Add($"{count:N0} {label}");
+            }
+
+            AddKept(TrackedFileStatus.ChangedSinceBackup, "changed since the backup");
+            AddKept(TrackedFileStatus.OriginalGameFile, "original game file(s)");
+            AddKept(TrackedFileStatus.VortexLink, "Vortex link(s)");
+            AddKept(TrackedFileStatus.CannotVerify, "that cannot be verified");
+
+            var folders = plan.Folders.Count > 0 ? $" and up to {plan.Folders.Count:N0} folder(s)" : string.Empty;
+            var keptText = kept.Count > 0 ? $"; kept: {string.Join(", ", kept)}" : string.Empty;
+            var gone = plan.FilesAlreadyGone > 0 ? $"; {plan.FilesAlreadyGone:N0} file(s) from the backups are already gone" : string.Empty;
+
+            return $"{plan.Count(TrackedFileStatus.Remove):N0} file(s){folders} would be removed{keptText}{gone}.";
+        }
+
+        private void ShowTrackedPreviewIfStillSelected(PurgeTarget target, TrackedPurgePlan plan)
+        {
+            if (SelectedProfile?.Profile.Id != target.Profile.Id)
+                return;
+
+            static string Describe(TrackedFileStatus status) => status switch
+            {
+                TrackedFileStatus.Remove => "removed",
+                TrackedFileStatus.ChangedSinceBackup => "kept: changed since the backup",
+                TrackedFileStatus.OriginalGameFile => "kept: original game file, verify the game files",
+                TrackedFileStatus.VortexLink => "kept: Vortex link, purge it in Vortex",
+                _ => "kept: cannot verify"
+            };
+
+            PreviewFiles = plan.Files
+                .OrderBy(file => file.Status)
+                .ThenBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .Select(file => $"{file.RelativePath}    ({Describe(file.Status)})")
+                .Concat(plan.Folders.OrderBy(folder => folder, StringComparer.OrdinalIgnoreCase).Select(folder => $"{folder}/    (folder: removed when empty)"))
+                .ToList();
+
+            PreviewSummary = plan.Files.Count == 0 && plan.Folders.Count == 0
+                ? "No file from the backups is left in the game folder."
+                : DescribeTrackedPlan(plan);
         }
 
         private PurgeTarget? GetPurgeTarget()

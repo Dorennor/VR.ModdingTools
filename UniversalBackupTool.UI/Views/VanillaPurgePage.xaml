@@ -81,6 +81,26 @@
                     </StackPanel>
                 </controls:SettingsCard>
 
+                <controls:SettingsCard
+                    Description="For a game that was updated, so the snapshot no longer matches. Deletes the files of the newest Changed game files and Game configs backups whose content still matches the backup. Keeps original game files, Vortex links and files changed since. Purge mods in Vortex first; run this before creating the new snapshot. Every deleted file is saved to a safety backup first."
+                    Header="Purge tracked files (from backups)"
+                    Icon="{ui:SymbolIcon Archive24}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:Button
+                            Command="{Binding PreviewTrackedCommand}"
+                            Content="Preview"
+                            Icon="{ui:SymbolIcon Search24}"
+                            IsEnabled="{Binding CanPurge}" />
+                        <ui:Button
+                            Margin="8,0,0,0"
+                            Appearance="Danger"
+                            Command="{Binding PurgeTrackedCommand}"
+                            Content="Purge"
+                            Icon="{ui:SymbolIcon Delete24}"
+                            IsEnabled="{Binding CanPurge}" />
+                    </StackPanel>
+                </controls:SettingsCard>
+
                 <Border
                     Margin="0,0,0,4"
                     Style="{StaticResource CardBorderStyle}"

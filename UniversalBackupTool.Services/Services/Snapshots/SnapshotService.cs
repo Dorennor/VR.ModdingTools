@@ -73,7 +73,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         /// Folders recorded in the snapshot plus every folder holding a snapshot entry. Older snapshots record no folders,
         /// so for them only folders holding vanilla files count as vanilla.
         /// </summary>
-        private static HashSet<string> GetVanillaDirectories(SnapshotData snapshot)
+        internal static HashSet<string> GetVanillaDirectories(SnapshotData snapshot)
         {
             var directories = new HashSet<string>(snapshot.Directories ?? [], StringComparer.OrdinalIgnoreCase);
 
@@ -95,7 +95,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         /// Relative paths of the real folders below the root. Folder links (junctions, symlinks) are entries of their own
         /// and are never entered.
         /// </summary>
-        private static List<string> ListRealDirectories(string rootPath, CancellationToken cancellationToken)
+        internal static List<string> ListRealDirectories(string rootPath, CancellationToken cancellationToken)
         {
             var result = new List<string>();
             var root = new DirectoryInfo(Path.GetFullPath(rootPath));
@@ -128,7 +128,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         /// Same rule as the file system scan: a reparse point with a link target (junction, symlink). Other reparse
         /// points, such as cloud placeholders, are real folders.
         /// </summary>
-        private static bool IsDirectoryLink(DirectoryInfo directory)
+        internal static bool IsDirectoryLink(DirectoryInfo directory)
         {
             try
             {
@@ -262,7 +262,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
         /// <summary>
         /// SHA-256 of a file as uppercase hex, or null when the file cannot be read (in use, access denied, removed).
         /// </summary>
-        private static string? TryComputeHash(string path, CancellationToken cancellationToken)
+        internal static string? TryComputeHash(string path, CancellationToken cancellationToken)
         {
             try
             {

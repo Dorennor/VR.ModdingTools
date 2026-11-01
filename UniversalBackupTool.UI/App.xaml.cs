@@ -112,6 +112,7 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<ISafetyBackupService, SafetyBackupService>();
             services.AddSingleton<ISnapshotService, SnapshotService>();
             services.AddSingleton<ISnapshotStore, JsonSnapshotStore>();
+            services.AddSingleton<ITrackedFilesPurgeService, TrackedFilesPurgeService>();
             services.AddSingleton<IConfirmationService, ConfirmationService>();
             services.AddSingleton<IArchiveService, ArchiveService>();
             services.AddSingleton<IIgnorePatternMatcher, IgnorePatternMatcher>();

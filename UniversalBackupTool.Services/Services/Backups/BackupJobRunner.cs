@@ -22,12 +22,7 @@ namespace UniversalBackupTool.Service.Services.Backups
         private const string MonolithicArchiveName = "backup.zip";
         private const string RootFilesArchiveName = "_root_files";
 
-        private static readonly JsonSerializerOptions ManifestJsonOptions = new()
-        {
-            WriteIndented = true,
-            PropertyNameCaseInsensitive = true,
-            Converters = { new JsonStringEnumConverter() }
-        };
+        private static readonly JsonSerializerOptions ManifestJsonOptions = BackupLocations.ManifestJsonOptions;
 
         private readonly IArchiveService _archiveService;
         private readonly IFileSystemProvider _fileSystemProvider;
@@ -921,39 +916,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             BackupProfile profile,
             CancellationToken cancellationToken)
         {
-            if (!Directory.Exists(gameDirectory))
-                return null;
+            var latest = await BackupLocations.FindLatestCompleteManifestAsync(gameDirectory, profile, cancellationToken);
 
-            LocatedManifest? latest = null;
-
-            foreach (var directory in Directory.EnumerateDirectories(gameDirectory))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var path = Path.Combine(directory, BackupManifest.FileName);
-
-                if (!File.Exists(path))
-                    continue;
-
-                try
-                {
-                    await using var stream = File.OpenRead(path);
-                    var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, ManifestJsonOptions, cancellationToken);
-
-                    if (manifest is null || !manifest.IsComplete || manifest.Units is null)
-                        continue;
-
-                    var profileMatches = manifest.ProfileId == profile.Id
-                        || string.Equals(manifest.GameName, profile.GameName, StringComparison.OrdinalIgnoreCase);
-
-                    if (profileMatches && (latest is null || manifest.CreatedAt > latest.Manifest.CreatedAt))
-                        latest = new LocatedManifest(directory, manifest);
-                }
-                catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
-                {
-                }
-            }
-
-            return latest;
+            return latest is null ? null : new LocatedManifest(latest.Directory, latest.Manifest);
         }
 
         /// <summary>
@@ -1369,30 +1334,14 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         /// <summary>
-        /// &lt;root&gt;\&lt;game&gt;\&lt;component&gt; for game backups; the shared Vortex AppData backups use
-        /// &lt;root&gt;\#Vortex AppData# directly. Each holds the dated snapshot folders and their _archives.
+        /// The component folder (see <see cref="BackupLocations.GetComponentDirectory"/>), created when missing.
         /// </summary>
         private static string GetComponentRootDirectory(string backupRoot, BackupProfile profile, BackupComponent component)
         {
-            var componentDirectory = VortexAppDataBackup.IsSharedBackup(profile.Id)
-                ? Path.Combine(backupRoot, VortexAppDataBackup.FolderName)
-                : Path.Combine(backupRoot, SanitizeFileName(profile.GameName), GetComponentFolderName(component));
+            var componentDirectory = BackupLocations.GetComponentDirectory(backupRoot, profile, component);
             Directory.CreateDirectory(componentDirectory);
 
             return componentDirectory;
-        }
-
-        private static string GetComponentFolderName(BackupComponent component)
-        {
-            return component switch
-            {
-                BackupComponent.StagingFolders => "staging",
-                BackupComponent.GameConfigs => "configs",
-                BackupComponent.VortexAppData => "appdata",
-                BackupComponent.CustomFolders => "custom",
-                BackupComponent.GameChanges => "changes",
-                _ => "misc"
-            };
         }
 
         private static Task WriteManifestAsync(string backupDirectory, BackupManifest manifest, CancellationToken cancellationToken)
@@ -1419,13 +1368,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
         }
 
-        private static string SanitizeFileName(string name)
-        {
-            var invalid = Path.GetInvalidFileNameChars();
-            var sanitized = new string(name.Select(character => invalid.Contains(character) ? '_' : character).ToArray()).Trim().TrimEnd('.');
-
-            return sanitized.Length == 0 ? "unnamed" : sanitized;
-        }
+        private static string SanitizeFileName(string name) => BackupLocations.SanitizeFileName(name);
 
         private static string GetLeafName(string path)
         {
