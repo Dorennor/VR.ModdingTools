@@ -65,6 +65,11 @@ namespace UniversalBackupTool.Tests
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CreateHardLinkW(string newFileName, string existingFileName, IntPtr securityAttributes);
 
+        private sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
+        {
+            public void Report(T value) => handler(value);
+        }
+
         private static void HardLink(string link, string target)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(link)!);
@@ -281,6 +286,93 @@ namespace UniversalBackupTool.Tests
                 Assert.That(batch.Results.SelectMany(result => result.Warnings).Where(warning => warning.StartsWith("Changed game files", StringComparison.Ordinal)), Is.Empty,
                     "nothing is skipped from changed game files");
             });
+        }
+
+        [Test]
+        public async Task Backup_NewGameFiles_TakeNewFilesAndLinks_NeverRewrittenOrModifiedVanillaFiles()
+        {
+            var stagingFile = Write(Path.Combine(_staging, "mod", "base.esm"), "modded base");
+            Write(Path.Combine(_outside, "textures", "a.dds"), "texture");
+            Write(Path.Combine(_game, "game.exe"), "vanilla");
+            Write(Path.Combine(_game, "patch.dll"), "patch");
+            Write(Path.Combine(_game, "Data", "base.esm"), "vanilla base");
+
+            var paths = new FakeStoragePathsProvider(Path.Combine(_root, "app"));
+            var snapshotService = new SnapshotService(_fileSystem, new FakeSafetyBackupService());
+            var profile = new BackupProfile { GameName = "Additions", GameRootPath = _game };
+            await new JsonSnapshotStore().SaveAsync(paths.GetPaths().SnapshotsDirectory, await snapshotService.CreateSnapshotAsync(profile.Id, _game));
+
+            // A reinstall gives a vanilla file a new timestamp, a game patch changes another one, and Vortex deploys a mod
+            // over a vanilla file plus a new folder.
+            File.SetLastWriteTimeUtc(Path.Combine(_game, "game.exe"), DateTime.UtcNow.AddDays(-30));
+            Write(Path.Combine(_game, "patch.dll"), "PATCH");
+            File.Delete(Path.Combine(_game, "Data", "base.esm"));
+            HardLink(Path.Combine(_game, "Data", "base.esm"), stagingFile);
+            Junction(Path.Combine(_game, "Data", "Textures"), _outside);
+            Write(Path.Combine(_game, "user.ini"), "config");
+
+            var runner = new BackupJobRunner(
+                new ArchiveService(),
+                _fileSystem,
+                snapshotService,
+                new JsonSnapshotStore(),
+                new IgnorePatternMatcher(),
+                new FakeJobStateService(),
+                paths);
+            var progressSteps = new List<string>();
+            var batch = await runner.RunBackupAsync(
+                [profile],
+                new BackupOptions(false, false, false, false, IncludeGameAdditions: true),
+                AppSettings.Default(Path.Combine(_root, "drive")),
+                new SynchronousProgress<BackupProgress>(value => progressSteps.Add(value.Phase)));
+
+            var result = batch.Results.Single();
+            var unit = (await new RestoreService(new FakeSafetyBackupService()).ReadManifestAsync(result.BackupDirectory))!.Units.Single();
+            using var zip = ZipFile.OpenRead(Path.Combine(result.BackupDirectory, unit.ArchiveRootRelativePath, unit.ArchiveFile));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Path.GetFileName(Path.GetDirectoryName(result.BackupDirectory)), Is.EqualTo("additions"));
+                Assert.That(unit.Component, Is.EqualTo(BackupComponent.GameAdditions));
+                Assert.That(zip.Entries.Select(entry => entry.FullName), Is.EquivalentTo(new[] { "Data/base.esm", "Data/Textures/textures/a.dds", "user.ini" }));
+                Assert.That(new StreamReader(zip.GetEntry("Data/base.esm")!.Open()).ReadToEnd(), Is.EqualTo("modded base"), "the link over a vanilla file is archived with the mod's content");
+                Assert.That(progressSteps, Has.None.Contains("Checking vanilla files"), "no vanilla file is read");
+            });
+        }
+
+        [Test]
+        public async Task Backup_ChangedGameFiles_Cancelled_KeepsTheContentChecksAlreadyDone()
+        {
+            Write(Path.Combine(_game, "a.bin"), "vanilla a");
+            Write(Path.Combine(_game, "b.bin"), "vanilla b");
+
+            var paths = new FakeStoragePathsProvider(Path.Combine(_root, "app"));
+            var store = new JsonSnapshotStore();
+            var snapshotService = new SnapshotService(_fileSystem, new FakeSafetyBackupService());
+            var profile = new BackupProfile { GameName = "Cancel", GameRootPath = _game };
+            await store.SaveAsync(paths.GetPaths().SnapshotsDirectory, await snapshotService.CreateSnapshotAsync(profile.Id, _game));
+
+            var newTime = DateTime.UtcNow.AddDays(-30);
+            File.SetLastWriteTimeUtc(Path.Combine(_game, "a.bin"), newTime);
+            File.SetLastWriteTimeUtc(Path.Combine(_game, "b.bin"), newTime);
+
+            var runner = new BackupJobRunner(new ArchiveService(), _fileSystem, snapshotService, store, new IgnorePatternMatcher(), new FakeJobStateService(), paths);
+            using var cancellation = new CancellationTokenSource();
+
+            // Cancel as soon as the first file has been checked.
+            var progress = new SynchronousProgress<BackupProgress>(value =>
+            {
+                if (value.Phase.Contains("Checking vanilla files", StringComparison.Ordinal) && value.FilesProcessed >= 1)
+                    cancellation.Cancel();
+            });
+
+            Assert.That(
+                async () => await runner.RunBackupAsync([profile], new BackupOptions(false, false, false, false, IncludeGameChanges: true), AppSettings.Default(Path.Combine(_root, "drive")), progress, cancellation.Token),
+                Throws.InstanceOf<OperationCanceledException>());
+
+            var stored = (await store.LoadAsync(paths.GetPaths().SnapshotsDirectory, profile.Id))!.Data.Files;
+
+            Assert.That(stored.Values.Count(file => file.LastWriteTimeUtc == newTime), Is.EqualTo(1), "the file checked before the cancel keeps its new timestamp");
         }
 
         [Test]

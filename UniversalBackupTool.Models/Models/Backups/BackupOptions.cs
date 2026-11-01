@@ -6,8 +6,9 @@ namespace UniversalBackupTool.Model.Models.Backups
         bool IncludeVortexAppData = true,
         bool IncludeCustomFolders = false,
         bool Monolithic = false,
-        bool IncludeGameChanges = false)
+        bool IncludeGameChanges = false,
+        bool IncludeGameAdditions = false)
     {
-        public bool HasAnyComponent => IncludeStaging || IncludeGameConfigs || IncludeGameChanges || IncludeVortexAppData || IncludeCustomFolders;
+        public bool HasAnyComponent => IncludeStaging || IncludeGameConfigs || IncludeGameAdditions || IncludeGameChanges || IncludeVortexAppData || IncludeCustomFolders;
     }
 }

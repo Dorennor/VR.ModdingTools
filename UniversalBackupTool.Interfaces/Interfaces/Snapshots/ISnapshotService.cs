@@ -22,13 +22,16 @@ namespace UniversalBackupTool.Interfaces.Snapshots
         /// <summary>
         /// Like <see cref="GetChangesAsync"/>; with <paramref name="verifyContent"/> a file whose size and kind match the
         /// baseline but whose timestamp differs is hashed, and it is only reported as modified when its content differs.
+        /// <paramref name="onReanchored"/> receives each file found identical as soon as it is hashed, so a caller can keep
+        /// that work even when the comparison is cancelled.
         /// </summary>
         Task<SnapshotComparison> CompareAsync(
             string rootPath,
             SnapshotData baselineSnapshot,
             bool verifyContent,
             CancellationToken cancellationToken = default,
-            IProgress<BackupProgress>? progress = null);
+            IProgress<BackupProgress>? progress = null,
+            Action<FileMetadata>? onReanchored = null);
 
         /// <summary>
         /// Real folders (not links) of the game folder that are not part of the baseline snapshot, deepest first. Purge

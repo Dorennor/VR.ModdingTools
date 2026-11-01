@@ -40,11 +40,11 @@ namespace UniversalBackupTool.Model.Models.Snapshots
     public sealed record TrackedFile(string RelativePath, TrackedFileStatus Status, long Length, DateTime LastWriteTimeUtc);
 
     /// <summary>
-    /// The files of the newest complete Changed game files and Game configs backups that are still in the game folder,
+    /// The files of the newest complete Changed game files, New game files and Game configs backups that are still in the game folder,
     /// each with what the purge does with it, and the folders it removes when they end up empty.
     /// </summary>
     /// <param name="RootPath">The game folder.</param>
-    /// <param name="Backups">The backups the files were taken from (newest complete Changed game files and Game configs).</param>
+    /// <param name="Backups">The backups the files were taken from (newest complete Changed game files, New game files and Game configs).</param>
     /// <param name="Files">Tracked files that exist in the game folder, sorted by path.</param>
     /// <param name="Folders">Folders recorded in the backups that are not in the vanilla snapshot, deepest first; removed when empty.</param>
     /// <param name="FilesAlreadyGone">Tracked files that no longer exist in the game folder.</param>

@@ -220,7 +220,17 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard
-                    Description="Everything in the game folder that differs from the vanilla snapshot, in one archive: new files, configs, modified vanilla files and deployed mod files (with their real content)."
+                    Description="Everything added to the game folder, in one archive: configs, new files and deployed mod files (with their real content). Fast: only compares names and file kinds with the vanilla snapshot, never reads vanilla files, so a reinstall or file verification does not slow it down."
+                    Header="New game files (configs + mods)"
+                    Icon="{ui:SymbolIcon DocumentAdd24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeGameAdditions, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard
+                    Description="Like New game files, plus vanilla files whose content differs from the vanilla snapshot. Vanilla files with a new timestamp are read once to compare their content (can take minutes for a large game after a reinstall); identical ones are remembered and skipped next time."
                     Header="Changed game files"
                     Icon="{ui:SymbolIcon DocumentEdit24}">
                     <ui:ToggleSwitch
@@ -303,6 +313,23 @@
                                 Style="{StaticResource RestoreDriveComboStyle}" />
                             <ui:ToggleSwitch
                                 IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}"
+                                OffContent="Off"
+                                OnContent="On" />
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="Configs, new files and deployed mod files from the additions snapshot."
+                        Header="New game files"
+                        Icon="{ui:SymbolIcon DocumentAdd24}"
+                        Visibility="{Binding RestoreHasGameAdditions, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox
+                                ItemsSource="{Binding AvailableDrives}"
+                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
+                                Style="{StaticResource RestoreDriveComboStyle}" />
+                            <ui:ToggleSwitch
+                                IsChecked="{Binding RestoreGameAdditions, Mode=TwoWay}"
                                 OffContent="Off"
                                 OnContent="On" />
                         </StackPanel>

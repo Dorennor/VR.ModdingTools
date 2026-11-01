@@ -13,6 +13,7 @@ using UniversalBackupTool.Model.Models.FileSystem;
 using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Settings;
+using UniversalBackupTool.Model.Models.Snapshots;
 
 namespace UniversalBackupTool.Service.Services.Backups
 {
@@ -207,6 +208,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (options.IncludeGameConfigs)
                 expanded.Add(new BackupOptions(false, true, false, false, options.Monolithic));
 
+            if (options.IncludeGameAdditions)
+                expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameAdditions: true));
+
             if (options.IncludeGameChanges)
                 expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameChanges: true));
 
@@ -223,6 +227,9 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
                 return "Configs";
+
+            if (options.IncludeGameAdditions)
+                return "New game files";
 
             if (options.IncludeGameChanges)
                 return "Changed game files";
@@ -687,15 +694,23 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeGameConfigs)
             {
-                var configs = await CollectGameFolderChangesAsync(profile, includeModified: false, "Game configs", configFilter, warnings, progress, cancellationToken);
+                var configs = await CollectGameFolderChangesAsync(profile, GameFolderScope.Configs, "Game configs", configFilter, warnings, progress, cancellationToken);
 
                 if (configs is not null && configs.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameConfigs, "configs", "configs.zip", profile.GameRootPath!, configs));
             }
 
+            if (options.IncludeGameAdditions)
+            {
+                var additions = await CollectGameFolderChangesAsync(profile, GameFolderScope.Additions, "New game files", configFilter, warnings, progress, cancellationToken);
+
+                if (additions is not null && additions.Count > 0)
+                    units.Add(CreateSingleUnit(options, BackupComponent.GameAdditions, "additions", "game_additions.zip", profile.GameRootPath!, additions));
+            }
+
             if (options.IncludeGameChanges)
             {
-                var changed = await CollectGameFolderChangesAsync(profile, includeModified: true, "Changed game files", configFilter, warnings, progress, cancellationToken);
+                var changed = await CollectGameFolderChangesAsync(profile, GameFolderScope.Changes, "Changed game files", configFilter, warnings, progress, cancellationToken);
 
                 if (changed is not null && changed.Count > 0)
                     units.Add(CreateSingleUnit(options, BackupComponent.GameChanges, "changes", "game_changes.zip", profile.GameRootPath!, changed));
@@ -789,16 +804,37 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         /// <summary>
-        /// Game folder files that differ from the baseline snapshot. Game configs (<paramref name="includeModified"/> false)
-        /// take only files the snapshot does not list, the same set the purge preview shows: a reinstall or file
-        /// verification rewrites every vanilla file with new timestamps, which must not turn the whole game into "configs".
-        /// Changed game files (<paramref name="includeModified"/> true) also take vanilla files whose content differs from
-        /// the snapshot, and are a complete copy: linked entries (Vortex deployments) are archived with their real content.
-        /// Game configs leave links out.
+        /// Which differences from the vanilla snapshot a game folder component takes.
+        /// </summary>
+        private enum GameFolderScope
+        {
+            /// <summary>
+            /// Real files the snapshot does not list (the purge preview's list). Links are left out.
+            /// </summary>
+            Configs,
+
+            /// <summary>
+            /// Configs plus every linked entry (Vortex deployments, also links placed over vanilla files), archived with
+            /// their real content. Judged by metadata only: no file is read, so a reinstall that gives every vanilla file
+            /// a new timestamp costs nothing.
+            /// </summary>
+            Additions,
+
+            /// <summary>
+            /// Additions plus vanilla files whose content differs from the snapshot. Vanilla files with a new timestamp but
+            /// the same size are hashed once; identical ones get their new timestamp recorded in the snapshot.
+            /// </summary>
+            Changes
+        }
+
+        /// <summary>
+        /// Game folder files that differ from the baseline snapshot, as selected by <paramref name="scope"/>. A reinstall
+        /// or file verification rewrites every vanilla file with new timestamps, which must never turn the whole game into
+        /// configs or additions.
         /// </summary>
         private async Task<List<SourceFile>?> CollectGameFolderChangesAsync(
             BackupProfile profile,
-            bool includeModified,
+            GameFolderScope scope,
             string label,
             IIgnoreFilter filter,
             List<string> warnings,
@@ -824,25 +860,23 @@ namespace UniversalBackupTool.Service.Services.Backups
                 return null;
             }
 
-            // Only modified files need the content check; Game configs take new files, which a hash cannot rule out.
-            var comparison = await Task.Run(
-                () => _snapshotService.CompareAsync(rootPath, baseline.Data, verifyContent: includeModified, cancellationToken, progress),
-                cancellationToken);
+            var includeModified = scope == GameFolderScope.Changes;
+            var includeLinks = scope != GameFolderScope.Configs;
+            var comparison = includeModified
+                ? await CompareWithContentCheckAsync(profile, rootPath, baseline.Data, label, warnings, progress, cancellationToken)
+                : await Task.Run(() => _snapshotService.CompareAsync(rootPath, baseline.Data, verifyContent: false, cancellationToken), cancellationToken);
 
-            if (comparison.Reanchored.Count > 0)
-            {
-                // Same content, new timestamp (reinstall, file verification): remember the new time so the next backup
-                // does not hash these files again.
-                await _snapshotStore.UpdateEntriesAsync(_storagePathsProvider.GetPaths().SnapshotsDirectory, profile.Id, comparison.Reanchored, cancellationToken);
-                warnings.Add($"{label}: {comparison.Reanchored.Count:N0} vanilla file(s) had new timestamps but the same content as in the snapshot; they were not backed up and the snapshot now has their new timestamps.");
-            }
-
-            if (comparison.UnverifiedFiles > 0)
-                warnings.Add($"{label}: {comparison.UnverifiedFiles:N0} file(s) with new timestamps were backed up without a content check because the snapshot has no hashes for them. Recreate the snapshot on the Vanilla & Purge page (while the game folder is vanilla) to enable content checks.");
-
-            var changes = includeModified
-                ? comparison.Changes.Values.ToList()
-                : comparison.Changes.Where(change => !baseline.Data.Files.ContainsKey(change.Key)).Select(change => change.Value).ToList();
+            var changes = comparison.Changes
+                .Where(change => scope switch
+                {
+                    GameFolderScope.Changes => true,
+                    // New paths, plus links placed over vanilla files (a mod replacing a game file). Vanilla files that
+                    // are still real files are never taken, whatever their timestamp or size.
+                    GameFolderScope.Additions => !baseline.Data.Files.ContainsKey(change.Key) || change.Value.IsLink,
+                    _ => !baseline.Data.Files.ContainsKey(change.Key)
+                })
+                .Select(change => change.Value)
+                .ToList();
 
             var files = new List<SourceFile>();
 
@@ -855,10 +889,10 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 if (change.Kind == FileEntryKind.DirectoryLink)
                 {
-                    // Changed game files are a complete copy of everything that differs from vanilla, so a linked folder
-                    // (Vortex junction or symlink) is archived with its real contents. Game configs leave links out:
-                    // they are mod deployments, whose data the staging backup holds.
-                    if (!includeModified || !Directory.Exists(fullPath))
+                    // New game files and Changed game files are complete copies, so a linked folder (Vortex junction or
+                    // symlink) is archived with its real contents. Game configs leave links out: they are mod
+                    // deployments, whose data the staging backup holds.
+                    if (!includeLinks || !Directory.Exists(fullPath))
                         continue;
 
                     var scan = await Task.Run(() => _fileSystemProvider.ScanFollowingLinks(fullPath, cancellationToken), cancellationToken);
@@ -869,24 +903,85 @@ namespace UniversalBackupTool.Service.Services.Backups
 
                 // Changes also contain files deleted since the snapshot, which there is nothing to archive for. Linked
                 // files (hardlinks, symlinks) are read through the link, so their real content is archived.
-                if ((change.IsLink && !includeModified) || !File.Exists(fullPath))
+                if ((change.IsLink && !includeLinks) || !File.Exists(fullPath))
                     continue;
 
                 files.Add(new SourceFile(fullPath, relative));
             }
 
-            if (!includeModified)
+            if (!includeLinks)
             {
                 var linkedChanges = changes.Count(change => change.IsLink);
 
                 if (linkedChanges > 0)
-                    warnings.Add($"{label}: {linkedChanges:N0} linked entr(ies) in the game folder (Vortex deployments) were left out of the configs; their data is part of the staging backup. Changed game files include them.");
+                    warnings.Add($"{label}: {linkedChanges:N0} linked entr(ies) in the game folder (Vortex deployments) were left out of the configs; their data is part of the staging backup. New game files and Changed game files include them.");
             }
 
             return files
                 .Where(file => !filter.IsIgnored(file.RelativePath))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Comparison that hashes vanilla files whose timestamp changed but whose size did not. Files found identical get
+        /// their new timestamp written to the snapshot, also when the backup is cancelled halfway, so no hashing work is
+        /// lost and the next run only reads what is left.
+        /// </summary>
+        private async Task<SnapshotComparison> CompareWithContentCheckAsync(
+            BackupProfile profile,
+            string rootPath,
+            SnapshotData baseline,
+            string label,
+            List<string> warnings,
+            IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            var snapshotsDirectory = _storagePathsProvider.GetPaths().SnapshotsDirectory;
+            var reanchored = new List<FileMetadata>();
+            var saved = false;
+
+            try
+            {
+                var comparison = await Task.Run(
+                    () => _snapshotService.CompareAsync(rootPath, baseline, verifyContent: true, cancellationToken, progress, file =>
+                    {
+                        lock (reanchored)
+                            reanchored.Add(file);
+                    }),
+                    cancellationToken);
+
+                if (comparison.Reanchored.Count > 0)
+                {
+                    await _snapshotStore.UpdateEntriesAsync(snapshotsDirectory, profile.Id, comparison.Reanchored, cancellationToken);
+                    saved = true;
+                    warnings.Add($"{label}: {comparison.Reanchored.Count:N0} vanilla file(s) had new timestamps but the same content as in the snapshot; they were not backed up and the snapshot now has their new timestamps.");
+                }
+
+                if (comparison.UnverifiedFiles > 0)
+                    warnings.Add($"{label}: {comparison.UnverifiedFiles:N0} file(s) with new timestamps were backed up without a content check because the snapshot has no hashes for them. Recreate the snapshot on the Vanilla & Purge page (while the game folder is vanilla) to enable content checks.");
+
+                return comparison;
+            }
+            finally
+            {
+                List<FileMetadata> pending;
+
+                lock (reanchored)
+                    pending = saved ? [] : [.. reanchored];
+
+                if (pending.Count > 0)
+                {
+                    try
+                    {
+                        // Cancelled or failed while hashing: keep what was already verified.
+                        await _snapshotStore.UpdateEntriesAsync(snapshotsDirectory, profile.Id, pending, CancellationToken.None);
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                    }
+                }
+            }
         }
 
         private static IEnumerable<UnitPlan> CreateStagingUnits(string stagingRoot, List<SourceFile> files)

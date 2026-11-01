@@ -6,7 +6,7 @@ namespace UniversalBackupTool.Interfaces.Snapshots
 {
     /// <summary>
     /// Purge for a game folder whose vanilla snapshot no longer matches (the game was updated): removes the files the
-    /// tool backed up (newest complete Changed game files and Game configs backups) instead of everything outside the
+    /// tool backed up (newest complete Changed game files, New game files and Game configs backups) instead of everything outside the
     /// snapshot. A file is removed only while its content still matches the backup; original game files, links (Vortex
     /// deployments, purged in Vortex) and files that cannot be verified are kept.
     /// </summary>

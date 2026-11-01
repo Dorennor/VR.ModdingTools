@@ -13,7 +13,7 @@ namespace UniversalBackupTool.Service.Services.Snapshots
 {
     public sealed class TrackedFilesPurgeService : ITrackedFilesPurgeService
     {
-        private static readonly BackupComponent[] TrackedComponents = [BackupComponent.GameChanges, BackupComponent.GameConfigs];
+        private static readonly BackupComponent[] TrackedComponents = [BackupComponent.GameChanges, BackupComponent.GameAdditions, BackupComponent.GameConfigs];
 
         private readonly IFileSystemProvider _fileSystemProvider;
         private readonly ISafetyBackupService _safetyBackupService;

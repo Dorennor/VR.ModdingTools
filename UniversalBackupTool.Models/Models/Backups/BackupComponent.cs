@@ -15,6 +15,12 @@ namespace UniversalBackupTool.Model.Models.Backups
         /// <summary>
         /// Every file in the game folder that differs from the baseline snapshot: new and modified files.
         /// </summary>
-        GameChanges
+        GameChanges,
+
+        /// <summary>
+        /// Everything added to the game folder: new files plus linked entries (Vortex deployments, also over vanilla
+        /// files) with their real content. Never reads file contents, so it stays fast after a reinstall.
+        /// </summary>
+        GameAdditions
     }
 }

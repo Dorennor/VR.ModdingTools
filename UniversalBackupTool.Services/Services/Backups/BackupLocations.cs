@@ -42,6 +42,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 BackupComponent.VortexAppData => "appdata",
                 BackupComponent.CustomFolders => "custom",
                 BackupComponent.GameChanges => "changes",
+                BackupComponent.GameAdditions => "additions",
                 _ => "misc"
             };
         }

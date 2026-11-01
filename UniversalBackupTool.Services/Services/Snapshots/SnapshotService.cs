@@ -11,6 +11,12 @@ namespace UniversalBackupTool.Service.Services.Snapshots
 {
     public sealed class SnapshotService : ISnapshotService
     {
+        /// <summary>
+        /// Shown while vanilla files with new timestamps are read: nothing is archived yet, and the result is remembered,
+        /// so the same files are not read again.
+        /// </summary>
+        internal const string VerifyStepName = "Checking vanilla files with new timestamps (nothing is archived in this step; done once)";
+
         private readonly IFileSystemProvider _fileSystemProvider;
         private readonly ISafetyBackupService _safetyBackupService;
 
@@ -151,7 +157,8 @@ namespace UniversalBackupTool.Service.Services.Snapshots
             SnapshotData baselineSnapshot,
             bool verifyContent,
             CancellationToken cancellationToken = default,
-            IProgress<BackupProgress>? progress = null)
+            IProgress<BackupProgress>? progress = null,
+            Action<FileMetadata>? onReanchored = null)
         {
             ArgumentNullException.ThrowIfNull(baselineSnapshot);
 
@@ -214,13 +221,19 @@ namespace UniversalBackupTool.Service.Services.Snapshots
                 var hash = TryComputeHash(Path.Combine(rootPath, currentFile.RelativePath), cancellationToken);
 
                 if (hash is not null && string.Equals(hash, baselineFile.Sha256, StringComparison.OrdinalIgnoreCase))
-                    reanchored.Add(baselineFile with { LastWriteTimeUtc = currentFile.LastWriteTimeUtc });
+                {
+                    var anchored = baselineFile with { LastWriteTimeUtc = currentFile.LastWriteTimeUtc };
+                    reanchored.Add(anchored);
+                    onReanchored?.Invoke(anchored);
+                }
                 else
+                {
                     changes[currentFile.RelativePath] = currentFile with { Sha256 = hash };
+                }
 
                 bytesDone += currentFile.SizeBytes;
                 filesDone++;
-                throttle.Report(new BackupProgress("Comparing file contents with the snapshot", currentFile.RelativePath, bytesDone, totalBytes, filesDone, toVerify.Count), force: filesDone == toVerify.Count);
+                throttle.Report(new BackupProgress(VerifyStepName, currentFile.RelativePath, bytesDone, totalBytes, filesDone, toVerify.Count), force: filesDone == toVerify.Count);
             }
 
             return new SnapshotComparison(changes, reanchored, unverified);

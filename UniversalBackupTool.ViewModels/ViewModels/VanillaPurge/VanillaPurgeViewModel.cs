@@ -326,7 +326,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
         }
 
         /// <summary>
-        /// The plan from the newest complete Changed game files and Game configs backups, or null (with an error) when the
+        /// The plan from the newest complete Changed game files, New game files and Game configs backups, or null (with an error) when the
         /// backup destination is not set or the game has no such backup.
         /// </summary>
         private async Task<TrackedPurgePlan?> BuildTrackedPlanAsync(PurgeTarget target, IOperationScope scope)
@@ -347,7 +347,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.VanillaPurge
 
             if (!plan.HasBackups)
             {
-                ReportError($"{target.Profile.GameName}: no complete Changed game files or Game configs backup found in {settings.GoogleDriveBackupPath}. Back up one of them first.");
+                ReportError($"{target.Profile.GameName}: no complete Changed game files, New game files or Game configs backup found in {settings.GoogleDriveBackupPath}. Back up one of them first.");
                 return null;
             }
 

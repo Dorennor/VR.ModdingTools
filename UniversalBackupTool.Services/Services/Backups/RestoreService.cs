@@ -150,7 +150,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             return unit.Component switch
             {
                 BackupComponent.StagingFolders => profile.VortexStagingPath,
-                BackupComponent.GameConfigs or BackupComponent.GameChanges => profile.GameRootPath,
+                BackupComponent.GameConfigs or BackupComponent.GameAdditions or BackupComponent.GameChanges => profile.GameRootPath,
                 BackupComponent.CustomFolders => ResolveCustomRoot(profile, unit),
                 _ => null
             };
@@ -259,7 +259,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                         ? entry.FullName[prefix.Length..]
                         : planItem.Unit.RelativeDestination.TrimEnd('/') + "/" + entry.FullName[prefix.Length..];
 
-                    if ((planItem.Unit.Component is BackupComponent.GameConfigs or BackupComponent.GameChanges) && filter.IsIgnored(componentRelative))
+                    if ((planItem.Unit.Component is BackupComponent.GameConfigs or BackupComponent.GameAdditions or BackupComponent.GameChanges) && filter.IsIgnored(componentRelative))
                     {
                         ignored++;
                         continue;
