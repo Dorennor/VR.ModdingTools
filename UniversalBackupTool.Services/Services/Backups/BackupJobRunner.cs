@@ -357,7 +357,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             var filesToArchive = 0;
             var writePlans = plans.Where(plan => !plan.IsPreviousReuse).ToList();
             var totalBytes = writePlans.Sum(plan => plan.Unit.Files.Sum(file => GetLength(file.SourcePath)));
-            var tracker = new ProgressTracker($"{progressLabel}: checking and archiving changed files", totalBytes, writePlans.Sum(plan => plan.Unit.Files.Count), progress);
+            var tracker = new ProgressTracker($"{progressLabel}: archiving changes", totalBytes, writePlans.Sum(plan => plan.Unit.Files.Count), progress);
             var modsArchived = 0;
             var modsReused = 0;
             var backupDirectory = CreateBackupDirectory(componentRootDirectory);

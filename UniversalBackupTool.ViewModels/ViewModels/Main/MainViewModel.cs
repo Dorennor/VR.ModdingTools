@@ -101,6 +101,19 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         [ObservableProperty]
         private string? _progressPercentText;
 
+        /// <summary>
+        /// Files and bytes done of the running phase ("93 / 2,337 files · 230.9 MB / 1.2 GB"). Shown next to the progress
+        /// bar, apart from <see cref="StatusText"/>, so a long phase text can never push it out of view.
+        /// </summary>
+        [ObservableProperty]
+        private string? _progressCountsText;
+
+        /// <summary>
+        /// Full status with counters and the current file; the status bar tooltip, as the phase text may be cut off.
+        /// </summary>
+        [ObservableProperty]
+        private string? _statusToolTip;
+
         public ReadOnlyObservableCollection<OutputEntry> OutputEntries { get; }
 
         public string LogsDirectory => _storagePathsProvider.GetPaths().LogsDirectory;
@@ -183,8 +196,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                 IsProgressIndeterminate = false;
                 ProgressText = null;
                 ProgressPercentText = null;
+                ProgressCountsText = null;
                 CurrentItemText = null;
                 StatusText = "Ready";
+                StatusToolTip = null;
 
                 if (_closeRequested)
                     CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -198,24 +213,33 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             IsProgressIndeterminate = progress is null || (progress.TotalBytes <= 0 && progress.TotalFiles <= 0);
             ProgressPercent = progress is null ? 0 : progress.Fraction * 100;
             ProgressPercentText = IsProgressIndeterminate ? null : $"{ProgressPercent:0}%";
-            ProgressText = progress is null ? "Starting..." : FormatProgress(progress);
+            ProgressCountsText = progress is null ? null : FormatCounts(progress);
+            ProgressText = progress is null
+                ? "Starting..."
+                : ProgressCountsText is null ? progress.Phase : $"{progress.Phase}: {ProgressCountsText}";
             CurrentItemText = progress?.CurrentItem;
             StatusText = IsCancelling
                 ? $"{OperationTitle}: cancelling..."
-                : $"{OperationTitle}  ·  {ProgressText}";
+                : $"{OperationTitle}  ·  {progress?.Phase ?? "Starting..."}";
+            StatusToolTip = CurrentItemText is null
+                ? $"{OperationTitle}  ·  {ProgressText}"
+                : $"{OperationTitle}  ·  {ProgressText}{Environment.NewLine}{CurrentItemText}";
         }
 
-        private static string FormatProgress(BackupProgress progress)
+        private static string? FormatCounts(BackupProgress progress)
         {
             if (progress.TotalBytes <= 0 && progress.TotalFiles <= 0)
-                return progress.Phase;
+                return null;
 
-            var text = $"{progress.Phase}: {progress.FilesProcessed:N0} / {progress.TotalFiles:N0} files";
+            var parts = new List<string>();
+
+            if (progress.TotalFiles > 0)
+                parts.Add($"{progress.FilesProcessed:N0} / {progress.TotalFiles:N0} files");
 
             if (progress.TotalBytes > 0)
-                text += $" ({FormatBytes(progress.BytesProcessed)} / {FormatBytes(progress.TotalBytes)})";
+                parts.Add($"{FormatBytes(progress.BytesProcessed)} / {FormatBytes(progress.TotalBytes)}");
 
-            return text;
+            return string.Join("  ·  ", parts);
         }
 
         private static string FormatBytes(long bytes)

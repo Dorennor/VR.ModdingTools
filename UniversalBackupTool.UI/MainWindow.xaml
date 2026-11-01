@@ -229,28 +229,47 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <StackPanel
+                            <!--
+                                Operation and phase: takes the remaining width and is cut off with "..." when it does not
+                                fit; the tooltip shows the full status and the current file. A Grid (not a horizontal
+                                StackPanel) is needed so the text gets a finite width and can be trimmed.
+                            -->
+                            <Grid
                                 Grid.Column="0"
                                 VerticalAlignment="Center"
-                                Orientation="Horizontal"
-                                ToolTip="{Binding CurrentItemText}">
+                                Background="Transparent"
+                                ToolTip="{Binding StatusToolTip}"
+                                ToolTipService.IsEnabled="{Binding IsOperationRunning}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
                                 <ui:ProgressRing
                                     Width="12"
                                     Height="12"
                                     Margin="0,0,8,0"
                                     IsIndeterminate="True"
                                     Visibility="{Binding IsOperationRunning, Converter={StaticResource BoolToVisibility}}" />
-                                <TextBlock Style="{StaticResource StatusBarTextStyle}" Text="{Binding StatusText}" />
-                            </StackPanel>
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Style="{StaticResource StatusBarTextStyle}"
+                                    Text="{Binding StatusText}" />
+                            </Grid>
 
+                            <!--  Counters, progress and Cancel: always shown in full, the phase text gives way instead.  -->
                             <StackPanel
                                 Grid.Column="1"
                                 Margin="12,0,0,0"
                                 VerticalAlignment="Center"
                                 Orientation="Horizontal"
                                 Visibility="{Binding IsOperationRunning, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock
+                                    Margin="0,0,10,0"
+                                    Style="{StaticResource StatusBarTextStyle}"
+                                    Text="{Binding ProgressCountsText}"
+                                    TextTrimming="None" />
                                 <ProgressBar
-                                    Width="160"
+                                    Width="120"
                                     Height="4"
                                     VerticalAlignment="Center"
                                     IsIndeterminate="{Binding IsProgressIndeterminate}"
@@ -261,7 +280,9 @@
                                     MinWidth="36"
                                     Margin="8,0,0,0"
                                     Style="{StaticResource StatusBarTextStyle}"
-                                    Text="{Binding ProgressPercentText}" />
+                                    Text="{Binding ProgressPercentText}"
+                                    TextAlignment="Right"
+                                    TextTrimming="None" />
                                 <ui:Button
                                     Height="22"
                                     Margin="4,0,0,0"
