@@ -103,6 +103,7 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<ISettingsStore, JsonSettingsStore>();
             services.AddSingleton<IBackupJobStateService, BackupJobStateService>();
             services.AddSingleton<IProfileStore, JsonProfileStore>();
+            services.AddSingleton<IGamePresenceService, GamePresenceService>();
             services.AddSingleton<ISystemPathsProvider, SystemPathsProvider>();
             services.AddSingleton<IPathDriveService, PathDriveService>();
             services.AddSingleton<IVortexProcessService, VortexProcessService>();

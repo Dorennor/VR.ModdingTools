@@ -8,6 +8,7 @@ using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Jobs;
 using UniversalBackupTool.Interface.Interfaces.Operations;
+using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Backups;
@@ -26,6 +27,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
         private readonly IBackupJobStateService _backupJobStateService;
         private readonly IConfirmationService _confirmationService;
         private readonly IThemeService _themeService;
+        private readonly IProfileStore _profileStore;
+        private readonly IGamePresenceService _gamePresenceService;
 
         private bool _closeRequested;
 
@@ -36,6 +39,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             IBackupJobStateService backupJobStateService,
             IConfirmationService confirmationService,
             IThemeService themeService,
+            IProfileStore profileStore,
+            IGamePresenceService gamePresenceService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -46,6 +51,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
             _backupJobStateService = backupJobStateService ?? throw new ArgumentNullException(nameof(backupJobStateService));
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
             _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+            _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
+            _gamePresenceService = gamePresenceService ?? throw new ArgumentNullException(nameof(gamePresenceService));
 
             OutputEntries = Output.Entries;
             Coordinator.StateChanged += (_, _) => UpdateOperationState();
@@ -138,7 +145,28 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
 
                                     if (PausedJob is not null)
                                         ReportWarning($"A previous backup is incomplete ({PausedJob.FailedFiles.Count:N0} file(s) were in use). Open Backup & Restore and select Continue Backup.");
+
+                                    if (Settings.ShowOnlyInstalledGames)
+                                        _ = MeasureInstalledGamesAsync();
                                 });
+
+        /// <summary>
+        /// Measures the game folders in the background at startup, so the Backup page already has the result when opened.
+        /// </summary>
+        private async Task MeasureInstalledGamesAsync()
+        {
+            try
+            {
+                var paths = _storagePathsProvider.GetPaths();
+                var profiles = await _profileStore.LoadAsync(paths.ProfilesFilePath);
+
+                await _gamePresenceService.CheckAsync(profiles, paths.GameSizesFilePath);
+            }
+            catch (Exception exception)
+            {
+                ReportWarning($"The sizes of installed games could not be checked: {exception.Message}");
+            }
+        }
 
         [RelayCommand]
         private void ClearOutput() => Output.Clear();

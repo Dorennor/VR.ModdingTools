@@ -15,6 +15,12 @@ namespace UniversalBackupTool.Model.Models.Settings
 
         public AppTheme Theme { get; init; } = AppTheme.System;
 
+        /// <summary>
+        /// The Backup profile picker hides games that are not on this PC (see IGamePresenceService). Restore and the other
+        /// pages always list every profile. Off by default, also for settings files from before it existed.
+        /// </summary>
+        public bool ShowOnlyInstalledGames { get; init; }
+
         public string SafetyBackupPath { get; init; } = string.IsNullOrWhiteSpace(SafetyBackupPath)
             ? Path.Combine(AppContext.BaseDirectory, "SafetyBackups")
             : SafetyBackupPath;

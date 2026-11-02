@@ -34,7 +34,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         public List<BackupTargetItemViewModel> Targets { get; } = [];
 
         /// <summary>
-        /// The games matching the search; this is what the section shows.
+        /// The games matching the search and not hidden as not installed; this is what the section shows.
         /// </summary>
         public ObservableCollection<BackupTargetItemViewModel> VisibleTargets { get; } = [];
 
@@ -59,8 +59,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         public bool HasSelection => Targets.Any(target => target.IsSelected);
 
         public string Summary => IsLocked
-            ? $"{SelectedCount} of {Targets.Count} selected · clear the {_otherSectionName} selection to pick these"
-            : $"{SelectedCount} of {Targets.Count} selected";
+            ? $"{SelectedCount} of {ShownCount} selected · clear the {_otherSectionName} selection to pick these"
+            : $"{SelectedCount} of {ShownCount} selected";
+
+        private int ShownCount => Targets.Count(target => target.IsOnDisk);
 
         /// <summary>
         /// True when every listed game of the section (the matching ones while searching) is selected.
@@ -83,7 +85,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         {
             VisibleTargets.Clear();
 
-            foreach (var target in Targets.Where(target => filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase)))
+            foreach (var target in Targets.Where(target => target.IsOnDisk && (filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase))))
                 VisibleTargets.Add(target);
 
             OnPropertyChanged(nameof(IsVisible));

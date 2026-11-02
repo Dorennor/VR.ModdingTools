@@ -190,10 +190,31 @@
                                     <TextBlock
                                         Margin="4,6"
                                         Style="{StaticResource CaptionTextStyle}"
-                                        Text="No games match the search."
+                                        Text="{Binding NoVisibleTargetsText}"
+                                        TextWrapping="Wrap"
                                         Visibility="{Binding HasNoVisibleTargets, Converter={StaticResource BoolToVisibility}}" />
                                 </Grid>
                             </Border>
+
+                            <Grid Margin="0,8,0,0" Visibility="{Binding HasHiddenGamesSummary, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource CaptionTextStyle}"
+                                    Text="{Binding HiddenGamesSummary}"
+                                    TextWrapping="Wrap" />
+                                <ui:Button
+                                    Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    Command="{Binding AcceptCurrentSizesCommand}"
+                                    Content="Accept current sizes"
+                                    IsEnabled="{Binding CanStartOperation}"
+                                    ToolTip="These games really did shrink, for example after removing mods or a clean reinstall: remember their current sizes and list them again"
+                                    Visibility="{Binding HasShrunkGames, Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
                         </StackPanel>
                     </StackPanel>
                 </Border>

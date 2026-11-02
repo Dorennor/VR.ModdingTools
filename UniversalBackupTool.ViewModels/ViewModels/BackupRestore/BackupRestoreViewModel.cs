@@ -32,12 +32,14 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         private readonly IConfirmationService _confirmationService;
         private readonly IPathDriveService _pathDriveService;
         private readonly IVortexProcessService _vortexProcessService;
+        private readonly IGamePresenceService _gamePresenceService;
 
         private const int MaxListedPaths = 20;
 
         private AppSettings? _settings;
         private List<BackupProfile> _allProfiles = [];
         private BackupManifest? _restoreManifest;
+        private int _installedCheckVersion;
 
         public BackupRestoreViewModel(
             IProfileStore profileStore,
@@ -50,6 +52,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             IConfirmationService confirmationService,
             IPathDriveService pathDriveService,
             IVortexProcessService vortexProcessService,
+            IGamePresenceService gamePresenceService,
             IOperationCoordinator operationCoordinator,
             IOperationOutputService operationOutputService)
             : base(operationOutputService, operationCoordinator)
@@ -64,6 +67,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
             _confirmationService = confirmationService ?? throw new ArgumentNullException(nameof(confirmationService));
             _pathDriveService = pathDriveService ?? throw new ArgumentNullException(nameof(pathDriveService));
             _vortexProcessService = vortexProcessService ?? throw new ArgumentNullException(nameof(vortexProcessService));
+            _gamePresenceService = gamePresenceService ?? throw new ArgumentNullException(nameof(gamePresenceService));
 
             PropertyChanged += (_, e) =>
             {
@@ -92,22 +96,125 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         [ObservableProperty]
         private string _targetFilter = string.Empty;
 
-        partial void OnTargetFilterChanged(string value) => RefreshVisibleTargets();
+        partial void OnTargetFilterChanged(string value)
+        {
+            OnPropertyChanged(nameof(NoVisibleTargetsText));
+            RefreshVisibleTargets();
+        }
 
         public bool HasNoVisibleTargets => Targets.Count > 0 && !VortexTargets.IsVisible && !OtherTargets.IsVisible;
+
+        public string NoVisibleTargetsText => TargetFilter.Trim().Length > 0
+            ? "No games match the search."
+            : "None of the games are installed on this PC. Turn off \"Show only installed games\" in Settings to list them anyway.";
+
+        /// <summary>
+        /// Which games "Show only installed games" hides and why; empty while none are hidden.
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasHiddenGamesSummary))]
+        private string _hiddenGamesSummary = string.Empty;
+
+        public bool HasHiddenGamesSummary => HiddenGamesSummary.Length > 0;
+
+        /// <summary>
+        /// True while games are hidden only because their folders shrank, which the user can accept as their new size.
+        /// </summary>
+        [ObservableProperty]
+        private bool _hasShrunkGames;
+
+        /// <summary>
+        /// The running or last installed games check; lets a caller wait for its result.
+        /// </summary>
+        public Task InstalledGamesCheck { get; private set; } = Task.CompletedTask;
 
         public string SelectedTargetsSummary
         {
             get
             {
                 var selected = Targets.Count(target => target.IsSelected);
+                var shown = Targets.Count(target => target.IsOnDisk);
 
                 return Targets.Count == 0
                     ? "No profiles yet. Add one on the Profiles page."
                     : selected == 0
-                        ? $"None of {Targets.Count} selected. Back up Vortex games and other games in separate runs."
-                        : $"{selected} of {Targets.Count} selected";
+                        ? $"None of {shown} selected. Back up Vortex games and other games in separate runs."
+                        : $"{selected} of {shown} selected";
             }
+        }
+
+        [RelayCommand]
+        private Task AcceptCurrentSizesAsync() => RunBusyAsync(async () =>
+                {
+                    var shrunk = Targets.Where(target => target.Presence == GamePresenceState.TooSmall).Select(target => target.Profile).ToList();
+
+                    await _gamePresenceService.AcceptCurrentSizesAsync(shrunk, _storagePathsProvider.GetPaths().GameSizesFilePath);
+                    await CheckInstalledGamesAsync();
+                });
+
+        /// <summary>
+        /// Hides the games whose folders are gone right away, then the ones the size check rejects once it has measured
+        /// them (which does not keep the page busy). Hidden games are deselected, so a backup can never include one.
+        /// </summary>
+        private void StartInstalledGamesCheck()
+        {
+            if (_settings is not { ShowOnlyInstalledGames: true })
+            {
+                _installedCheckVersion++;
+                ApplyPresence(_ => GamePresenceState.OnDisk);
+                return;
+            }
+
+            ApplyPresence(target => _gamePresenceService.FoldersExist(target.Profile) ? GamePresenceState.OnDisk : GamePresenceState.Missing);
+            InstalledGamesCheck = CheckInstalledGamesAsync();
+        }
+
+        private async Task CheckInstalledGamesAsync()
+        {
+            var version = ++_installedCheckVersion;
+
+            try
+            {
+                var results = await _gamePresenceService.CheckAsync(_allProfiles, _storagePathsProvider.GetPaths().GameSizesFilePath);
+
+                // Settings or profiles were loaded again meanwhile; a newer check decides.
+                if (version != _installedCheckVersion)
+                    return;
+
+                var states = results.ToDictionary(result => result.ProfileId, result => result.State);
+
+                ApplyPresence(target => states.GetValueOrDefault(target.Profile.Id, GamePresenceState.OnDisk));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                ReportWarning($"The sizes of installed games could not be checked: {exception.Message}");
+            }
+        }
+
+        private void ApplyPresence(Func<BackupTargetItemViewModel, GamePresenceState> getState)
+        {
+            foreach (var target in Targets)
+            {
+                target.Presence = getState(target);
+
+                if (!target.IsOnDisk)
+                    target.IsSelected = false;
+            }
+
+            var missing = Targets.Where(target => target.Presence == GamePresenceState.Missing).Select(target => target.GameName).ToList();
+            var shrunk = Targets.Where(target => target.Presence == GamePresenceState.TooSmall).Select(target => target.GameName).ToList();
+            var parts = new List<string>();
+
+            if (missing.Count > 0)
+                parts.Add($"Hidden, not found on this PC: {string.Join(", ", missing)}.");
+
+            if (shrunk.Count > 0)
+                parts.Add($"Hidden, less than half the size they had: {string.Join(", ", shrunk)}.");
+
+            HiddenGamesSummary = string.Join(" ", parts);
+            HasShrunkGames = shrunk.Count > 0;
+
+            RefreshVisibleTargets();
         }
 
         [RelayCommand]
@@ -320,7 +427,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
                     }
 
                     OnPropertyChanged(nameof(HasNoProfiles));
-                    RefreshVisibleTargets();
+                    StartInstalledGamesCheck();
 
                     var job = await _backupJobStateService.LoadAsync(paths.ActiveBackupJobFilePath);
 

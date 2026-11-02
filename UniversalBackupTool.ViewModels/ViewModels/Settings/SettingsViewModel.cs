@@ -97,6 +97,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
         private string _vortexAppDataPath = string.Empty;
 
         [ObservableProperty]
+        private bool _showOnlyInstalledGames;
+
+        [ObservableProperty]
         private double _maxPreservedBackupsPerGame = 3;
 
         [ObservableProperty]
@@ -150,6 +153,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
                                         GoogleDriveBackupPath = GoogleDriveBackupPath.Trim(),
                                         SafetyBackupPath = SafetyBackupPath.Trim(),
                                         VortexAppDataPath = VortexAppDataPath.Trim(),
+                                        ShowOnlyInstalledGames = ShowOnlyInstalledGames,
                                         SafetyBackupRetentionDays = (int)SafetyBackupRetentionDays,
                                         MaxPreservedBackupsPerGame = (int)MaxPreservedBackupsPerGame,
                                         CompressionRules = CompressionRules
@@ -241,6 +245,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Settings
             GoogleDriveBackupPath = settings.GoogleDriveBackupPath;
             SafetyBackupPath = settings.SafetyBackupPath;
             VortexAppDataPath = settings.VortexAppDataPath;
+            ShowOnlyInstalledGames = settings.ShowOnlyInstalledGames;
             SafetyBackupRetentionDays = settings.SafetyBackupRetentionDays;
             MaxPreservedBackupsPerGame = settings.MaxPreservedBackupsPerGame;
             GlobalIgnorePatternsText = string.Join(Environment.NewLine, settings.GlobalIgnorePatterns);

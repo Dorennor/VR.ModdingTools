@@ -118,6 +118,11 @@ namespace UniversalBackupTool.Tests
         {
             await SaveProfilesAsync(games);
 
+            return await LoadBackupRestoreAsync();
+        }
+
+        private async Task<BackupRestoreViewModel> LoadBackupRestoreAsync()
+        {
             var viewModel = new BackupRestoreViewModel(
                 new JsonProfileStore(),
                 new JsonSettingsStore(),
@@ -129,11 +134,155 @@ namespace UniversalBackupTool.Tests
                 _dialogs,
                 new PathDriveService(new FakeDrives()),
                 _vortex,
+                new GamePresenceService(),
                 _coordinator,
                 _output);
 
             await viewModel.LoadCommand.ExecuteAsync(null);
             return viewModel;
+        }
+
+        private async Task EnableOnlyInstalledGamesAsync()
+        {
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+
+            await new JsonSettingsStore().SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")) with { ShowOnlyInstalledGames = true });
+        }
+
+        private string CreateGameFolder(string name, int sizeBytes)
+        {
+            var folder = Path.Combine(_root, name);
+            Directory.CreateDirectory(folder);
+            File.WriteAllBytes(Path.Combine(folder, "game.bin"), new byte[sizeBytes]);
+
+            return folder;
+        }
+
+        [Test]
+        public async Task OnlyInstalledGames_Off_ListsGamesWithoutFolders()
+        {
+            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets, Has.Count.EqualTo(2));
+                Assert.That(viewModel.HasHiddenGamesSummary, Is.False);
+                Assert.That(File.Exists(_paths.GetPaths().GameSizesFilePath), Is.False);
+            });
+        }
+
+        [Test]
+        public async Task OnlyInstalledGames_On_HidesMissingGames_ButRestoreKeepsAllProfiles()
+        {
+            CreateGameFolder("Skyrim", 100);
+            await EnableOnlyInstalledGamesAsync();
+
+            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            await viewModel.InstalledGamesCheck;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Skyrim" }));
+                Assert.That(viewModel.VortexTargets.Summary, Is.EqualTo("0 of 1 selected"));
+                Assert.That(viewModel.Targets, Has.Count.EqualTo(2));
+                Assert.That(viewModel.HiddenGamesSummary, Does.Contain("Fallout 4"));
+                Assert.That(viewModel.HasShrunkGames, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task OnlyInstalledGames_NoGameInstalled_ExplainsTheEmptyList()
+        {
+            await EnableOnlyInstalledGamesAsync();
+
+            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            await viewModel.InstalledGamesCheck;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.HasNoVisibleTargets, Is.True);
+                Assert.That(viewModel.NoVisibleTargetsText, Does.Contain("Show only installed games"));
+            });
+        }
+
+        [Test]
+        public async Task OnlyInstalledGames_GameGone_IsDeselectedOnReload_AndNotBackedUp()
+        {
+            var skyrim = CreateGameFolder("Skyrim", 100);
+            CreateGameFolder("Fallout 4", 100);
+            await EnableOnlyInstalledGamesAsync();
+
+            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            await viewModel.InstalledGamesCheck;
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+
+            Directory.Delete(skyrim, recursive: true);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            await viewModel.InstalledGamesCheck;
+
+            IReadOnlyList<string> backedUp = [];
+            _runner.OnRun = (profiles, _) =>
+            {
+                backedUp = profiles.Select(profile => profile.GameName).ToList();
+                return new BackupBatchResult([], [], 0);
+            };
+            viewModel.IncludeStaging = true;
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.That(backedUp, Is.EqualTo(new[] { "Fallout 4" }));
+        }
+
+        [Test]
+        public async Task OnlyInstalledGames_ShrunkGame_IsHiddenUntilItsSizeIsAccepted()
+        {
+            var skyrim = CreateGameFolder("Skyrim", 1000);
+            await EnableOnlyInstalledGamesAsync();
+
+            var first = await CreateBackupRestoreAsync("Skyrim");
+            await first.InstalledGamesCheck;
+            Assert.That(first.VortexTargets.VisibleTargets, Has.Count.EqualTo(1));
+
+            // The next application run: a new service measures again and compares with the remembered size.
+            File.WriteAllBytes(Path.Combine(skyrim, "game.bin"), new byte[100]);
+
+            var viewModel = await LoadBackupRestoreAsync();
+            await viewModel.InstalledGamesCheck;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets, Is.Empty);
+                Assert.That(viewModel.HasShrunkGames, Is.True);
+            });
+
+            await viewModel.AcceptCurrentSizesCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets, Has.Count.EqualTo(1));
+                Assert.That(viewModel.HasShrunkGames, Is.False);
+                Assert.That(viewModel.HasHiddenGamesSummary, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task Settings_ShowOnlyInstalledGames_IsSavedAndOffForOldSettingsFiles()
+        {
+            var store = new JsonSettingsStore();
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")));
+
+            var json = await File.ReadAllTextAsync(settingsPath);
+            await File.WriteAllTextAsync(settingsPath, System.Text.RegularExpressions.Regex.Replace(json, "\\s*\"ShowOnlyInstalledGames\":\\s*false,?", string.Empty));
+
+            var viewModel = new SettingsViewModel(store, _paths, _dialogs, new FakeThemeService(), _coordinator, _output);
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.That(viewModel.ShowOnlyInstalledGames, Is.False);
+
+            viewModel.ShowOnlyInstalledGames = true;
+            await viewModel.SaveCommand.ExecuteAsync(null);
+
+            Assert.That((await store.LoadAsync(settingsPath)).ShowOnlyInstalledGames, Is.True);
         }
 
         [Test]

@@ -24,5 +24,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
         /// </summary>
         [ObservableProperty]
         private bool _isSelectable = true;
+
+        /// <summary>
+        /// Whether the game is on this PC. Only "Show only installed games" (Settings) ever makes this anything but OnDisk.
+        /// </summary>
+        public GamePresenceState Presence { get; set; } = GamePresenceState.OnDisk;
+
+        public bool IsOnDisk => Presence == GamePresenceState.OnDisk;
     }
 }
