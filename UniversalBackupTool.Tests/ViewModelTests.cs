@@ -8,12 +8,11 @@ using UniversalBackupTool.Model.Models.Jobs;
 using UniversalBackupTool.Model.Models.Operations;
 using UniversalBackupTool.Model.Models.Profiles;
 using UniversalBackupTool.Model.Models.Settings;
-using UniversalBackupTool.Service.Services.Backups;
 using UniversalBackupTool.Service.Services.Operations;
 using UniversalBackupTool.Service.Services.Paths;
 using UniversalBackupTool.Service.Services.Profiles;
 using UniversalBackupTool.Service.Services.Settings;
-using UniversalBackupTool.ViewModel.ViewModels.BackupRestore;
+using UniversalBackupTool.ViewModel.ViewModels.Backup;
 using UniversalBackupTool.ViewModel.ViewModels.Dashboard;
 using UniversalBackupTool.ViewModel.ViewModels.Settings;
 
@@ -114,25 +113,22 @@ namespace UniversalBackupTool.Tests
             await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath, profiles);
         }
 
-        private async Task<BackupRestoreViewModel> CreateBackupRestoreAsync(params string[] games)
+        private async Task<BackupViewModel> CreateBackupAsync(params string[] games)
         {
             await SaveProfilesAsync(games);
 
-            return await LoadBackupRestoreAsync();
+            return await LoadBackupAsync();
         }
 
-        private async Task<BackupRestoreViewModel> LoadBackupRestoreAsync()
+        private async Task<BackupViewModel> LoadBackupAsync()
         {
-            var viewModel = new BackupRestoreViewModel(
+            var viewModel = new BackupViewModel(
                 new JsonProfileStore(),
                 new JsonSettingsStore(),
                 _paths,
                 _runner,
                 new FakeJobStateService(),
-                new RestoreService(new FakeSafetyBackupService()),
                 _dialogs,
-                _dialogs,
-                new PathDriveService(new FakeDrives()),
                 _vortex,
                 new GamePresenceService(),
                 _coordinator,
@@ -161,7 +157,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task OnlyInstalledGames_Off_ListsGamesWithoutFolders()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
 
             Assert.Multiple(() =>
             {
@@ -172,12 +168,12 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
-        public async Task OnlyInstalledGames_On_HidesMissingGames_ButRestoreKeepsAllProfiles()
+        public async Task OnlyInstalledGames_On_HidesMissingGames()
         {
             CreateGameFolder("Skyrim", 100);
             await EnableOnlyInstalledGamesAsync();
 
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
             await viewModel.InstalledGamesCheck;
 
             Assert.Multiple(() =>
@@ -195,7 +191,7 @@ namespace UniversalBackupTool.Tests
         {
             await EnableOnlyInstalledGamesAsync();
 
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             await viewModel.InstalledGamesCheck;
 
             Assert.Multiple(() =>
@@ -212,7 +208,7 @@ namespace UniversalBackupTool.Tests
             CreateGameFolder("Fallout 4", 100);
             await EnableOnlyInstalledGamesAsync();
 
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
             await viewModel.InstalledGamesCheck;
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
 
@@ -238,14 +234,14 @@ namespace UniversalBackupTool.Tests
             var skyrim = CreateGameFolder("Skyrim", 1000);
             await EnableOnlyInstalledGamesAsync();
 
-            var first = await CreateBackupRestoreAsync("Skyrim");
+            var first = await CreateBackupAsync("Skyrim");
             await first.InstalledGamesCheck;
             Assert.That(first.VortexTargets.VisibleTargets, Has.Count.EqualTo(1));
 
             // The next application run: a new service measures again and compares with the remembered size.
             File.WriteAllBytes(Path.Combine(skyrim, "game.bin"), new byte[100]);
 
-            var viewModel = await LoadBackupRestoreAsync();
+            var viewModel = await LoadBackupAsync();
             await viewModel.InstalledGamesCheck;
 
             Assert.Multiple(() =>
@@ -288,7 +284,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task SelectAll_TogglesBetweenSelectAndDeselect()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4", "Witcher 3");
+            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4", "Witcher 3");
 
             Assert.That(viewModel.VortexTargets.SelectAllButtonText, Is.EqualTo("Select all"));
 
@@ -313,7 +309,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task SelectAll_WithSearch_AffectsOnlyMatchingGames_AndClearResetsAll()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Skyrim VR", "Fallout 4");
+            var viewModel = await CreateBackupAsync("Skyrim", "Skyrim VR", "Fallout 4");
 
             viewModel.TargetFilter = "sky";
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
@@ -333,7 +329,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Components_AreAllOffByDefault()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
 
             Assert.Multiple(() =>
             {
@@ -348,7 +344,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task FinishedBackup_DeselectsGames_AndKeepsComponentToggles()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim", "Fallout 4");
+            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeStaging = true;
             viewModel.IncludeGameConfigs = true;
@@ -371,7 +367,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task CancelledBackup_KeepsSelectionForRetry()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeGameConfigs = true;
             _runner.OnRun = (_, _) => throw new OperationCanceledException();
@@ -389,7 +385,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task StartBackup_WhileAnotherOperationRuns_IsRejected()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeStaging = true;
 
@@ -410,7 +406,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task StartBackup_WithoutSelection_ReportsErrorBeforeStarting()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
 
             await viewModel.StartBackupCommand.ExecuteAsync(null);
 
@@ -490,7 +486,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Backup_WithVortexAppData_AsksFirst_WhenVortexIsRunning()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             await new JsonSettingsStore().SaveAsync(_paths.GetPaths().SettingsFilePath, AppSettings.Default(Path.Combine(_root, "Backups")));
             await viewModel.LoadCommand.ExecuteAsync(null);
             viewModel.Targets.Single().IsSelected = true;
@@ -652,7 +648,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Backup_VortexComponents_HiddenAndNotUsed_WhenOnlyNonVortexGamesAreSelected()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath,
             [
                 new BackupProfile { GameName = "Skyrim", VortexStagingPath = Path.Combine(_root, "Skyrim") },
@@ -675,9 +671,9 @@ namespace UniversalBackupTool.Tests
             Assert.That(viewModel.ShowVortexComponents, Is.True, "a Vortex game is selected");
         }
 
-        private async Task<BackupRestoreViewModel> CreateMixedBackupRestoreAsync()
+        private async Task<BackupViewModel> CreateMixedBackupAsync()
         {
-            var viewModel = await CreateBackupRestoreAsync("Skyrim");
+            var viewModel = await CreateBackupAsync("Skyrim");
             await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath,
             [
                 new BackupProfile { GameName = "Skyrim", VortexStagingPath = Path.Combine(_root, "Skyrim") },
@@ -692,7 +688,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Picker_SplitsVortexAndOtherGames_EachWithItsOwnSelectAll()
         {
-            var viewModel = await CreateMixedBackupRestoreAsync();
+            var viewModel = await CreateMixedBackupAsync();
 
             Assert.Multiple(() =>
             {
@@ -743,7 +739,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Picker_SearchFiltersBothGroups_AndSelectAllOnlyTakesMatchingGamesOfItsGroup()
         {
-            var viewModel = await CreateMixedBackupRestoreAsync();
+            var viewModel = await CreateMixedBackupAsync();
 
             viewModel.TargetFilter = "o";
             viewModel.OtherTargets.ToggleSelectAllCommand.Execute(null);
@@ -771,7 +767,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task Backup_RefusesAMixedSelection()
         {
-            var viewModel = await CreateMixedBackupRestoreAsync();
+            var viewModel = await CreateMixedBackupAsync();
             viewModel.IncludeGameConfigs = true;
 
             // The UI never allows this (the other group is locked), but a mixed selection must not reach the runner.

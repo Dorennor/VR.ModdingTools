@@ -1,5 +1,5 @@
 <Page
-    x:Class="UniversalBackupTool.UI.Views.BackupRestorePage"
+    x:Class="UniversalBackupTool.UI.Views.BackupPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="clr-namespace:UniversalBackupTool.UI.Controls"
@@ -7,23 +7,11 @@
     xmlns:helpers="clr-namespace:UniversalBackupTool.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="Backup &amp; Restore"
+    Title="Backup"
     d:DesignHeight="800"
     d:DesignWidth="900"
     Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
-    <Page.Resources>
-        <!--  Drive picker + on/off switch on the right of a restore component row.  -->
-        <Style
-            x:Key="RestoreDriveComboStyle"
-            BasedOn="{StaticResource {x:Type ComboBox}}"
-            TargetType="ComboBox">
-            <Setter Property="Width" Value="84" />
-            <Setter Property="Margin" Value="0,0,16,0" />
-            <Setter Property="ToolTip" Value="Drive to restore to" />
-        </Style>
-    </Page.Resources>
-
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <Grid>
             <Grid.ColumnDefinitions>
@@ -33,8 +21,8 @@
             <StackPanel Style="{StaticResource PageContentPanelStyle}">
                 <Grid Style="{StaticResource PageHeaderGridStyle}">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Backup &amp; Restore" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Create incremental snapshots of your games, or restore a previous one." />
+                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Backup" />
+                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Create incremental snapshots of your games." />
                     </StackPanel>
                 </Grid>
 
@@ -289,158 +277,6 @@
                         Icon="{ui:SymbolIcon ArrowUpload24}"
                         IsEnabled="{Binding CanStartOperation}" />
                 </StackPanel>
-
-                <!--  Restore  -->
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Restore" />
-
-                <controls:SettingsCard
-                    Description="{Binding RestoreSummary, TargetNullValue='Select a dated backup folder, for example ...\\Game\\staging\\2026-10-31_12-00-00.'}"
-                    Header="Backup to restore"
-                    Icon="{ui:SymbolIcon History24}">
-                    <ui:Button
-                        Command="{Binding BrowseRestoreFolderCommand}"
-                        Content="Browse..."
-                        Icon="{ui:SymbolIcon FolderOpen24}"
-                        IsEnabled="{Binding IsIdle}" />
-                </controls:SettingsCard>
-
-                <StackPanel Visibility="{Binding HasRestoreManifest, Converter={StaticResource BoolToVisibility}}">
-                    <controls:SettingsCard
-                        Description="Mod folders from the staging snapshot."
-                        Header="Staging folders"
-                        Icon="{ui:SymbolIcon Archive24}"
-                        Visibility="{Binding RestoreHasStaging, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreStagingDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreStaging, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="New game folder files from the configs snapshot."
-                        Header="Game configs"
-                        Icon="{ui:SymbolIcon Settings24}"
-                        Visibility="{Binding RestoreHasGameConfigs, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreGameConfigs, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="Configs, new files and deployed mod files from the additions snapshot."
-                        Header="New game files"
-                        Icon="{ui:SymbolIcon DocumentAdd24}"
-                        Visibility="{Binding RestoreHasGameAdditions, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreGameAdditions, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="New and modified game folder files from the changes snapshot."
-                        Header="Changed game files"
-                        Icon="{ui:SymbolIcon DocumentEdit24}"
-                        Visibility="{Binding RestoreHasGameChanges, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreGameConfigsDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreGameChanges, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="Restored into the Vortex AppData folder from Settings. Shared by all games: every game's Vortex data returns to this backup. Close Vortex first."
-                        Header="Vortex AppData"
-                        Icon="{ui:SymbolIcon Storage24}"
-                        Visibility="{Binding RestoreHasAppData, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreAppDataDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreAppData, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <controls:SettingsCard
-                        Description="Extra folders and files from the profile."
-                        Header="Custom paths"
-                        Icon="{ui:SymbolIcon FolderAdd24}"
-                        Visibility="{Binding RestoreHasCustomFolders, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox
-                                ItemsSource="{Binding AvailableDrives}"
-                                SelectedItem="{Binding RestoreCustomFoldersDrive, Mode=TwoWay}"
-                                Style="{StaticResource RestoreDriveComboStyle}" />
-                            <ui:ToggleSwitch
-                                IsChecked="{Binding RestoreCustomFolders, Mode=TwoWay}"
-                                OffContent="Off"
-                                OnContent="On" />
-                        </StackPanel>
-                    </controls:SettingsCard>
-
-                    <Border Margin="0,0,0,4" Style="{StaticResource CardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="Will be restored to" />
-                            <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding RestorePlanLines}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock
-                                            Margin="0,2"
-                                            Style="{StaticResource CaptionTextStyle}"
-                                            Text="{Binding}" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <TextBlock
-                                Margin="0,10,0,0"
-                                Style="{StaticResource CaptionTextStyle}"
-                                Text="{Binding RestoreFolderPath, StringFormat='Source: {0}'}" />
-                        </StackPanel>
-                    </Border>
-
-                    <StackPanel Style="{StaticResource ActionBarPanelStyle}">
-                        <ui:Button
-                            Appearance="Danger"
-                            Command="{Binding RestoreCommand}"
-                            Content="Restore selected"
-                            Icon="{ui:SymbolIcon ArrowDownload24}"
-                            IsEnabled="{Binding CanStartOperation}" />
-                    </StackPanel>
-                </StackPanel>
-
-                <TextBlock
-                    Margin="1,16,0,0"
-                    Style="{StaticResource CaptionTextStyle}"
-                    Text="Files that a restore would overwrite are saved to a safety backup first. When moving backups, keep each component's _archives folder next to its dated snapshot folders: snapshots share the archives stored there." />
             </StackPanel>
         </Grid>
     </ScrollViewer>

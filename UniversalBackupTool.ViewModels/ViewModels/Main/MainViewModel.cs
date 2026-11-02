@@ -144,7 +144,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                                     ReportInfo($"Vortex Backup Tool {version?.ToString(3)} started. Application data: {paths.BaseDirectory}");
 
                                     if (PausedJob is not null)
-                                        ReportWarning($"A previous backup is incomplete ({PausedJob.FailedFiles.Count:N0} file(s) were in use). Open Backup & Restore and select Continue Backup.");
+                                        ReportWarning($"A previous backup is incomplete ({PausedJob.FailedFiles.Count:N0} file(s) were in use). Open Backup and select Continue Backup.");
 
                                     if (Settings.ShowOnlyInstalledGames)
                                         _ = MeasureInstalledGamesAsync();

@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 using UniversalBackupTool.Model.Models.Profiles;
 
-namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
+namespace UniversalBackupTool.ViewModel.ViewModels.Backup
 {
     public sealed partial class BackupTargetItemViewModel : ObservableObject
     {

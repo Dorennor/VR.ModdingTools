@@ -57,9 +57,14 @@
                         <ui:SymbolIcon Symbol="Broom24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Backup &amp; Restore" TargetPageType="{x:Type views:BackupRestorePage}">
+                <ui:NavigationViewItem Content="Backup" TargetPageType="{x:Type views:BackupPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Archive24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Restore" TargetPageType="{x:Type views:RestorePage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="History24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>

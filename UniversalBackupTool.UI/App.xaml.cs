@@ -29,9 +29,10 @@ using UniversalBackupTool.Services;
 using UniversalBackupTool.Services.Backups;
 using UniversalBackupTool.UI.Services;
 using UniversalBackupTool.UI.Views;
-using UniversalBackupTool.ViewModel.ViewModels.BackupRestore;
+using UniversalBackupTool.ViewModel.ViewModels.Backup;
 using UniversalBackupTool.ViewModel.ViewModels.Dashboard;
 using UniversalBackupTool.ViewModel.ViewModels.Main;
+using UniversalBackupTool.ViewModel.ViewModels.Restore;
 using UniversalBackupTool.ViewModel.ViewModels.Settings;
 using UniversalBackupTool.ViewModel.ViewModels.VanillaPurge;
 
@@ -128,13 +129,15 @@ namespace UniversalBackupTool.UI
             services.AddSingleton<DashboardViewModel>();
             services.AddSingleton<SettingsViewModel>();
             services.AddSingleton<VanillaPurgeViewModel>();
-            services.AddSingleton<BackupRestoreViewModel>();
+            services.AddSingleton<BackupViewModel>();
+            services.AddSingleton<RestoreViewModel>();
 
             services.AddSingleton<MainWindow>();
 
             services.AddSingleton<DashboardPage>();
             services.AddSingleton<VanillaPurgePage>();
-            services.AddSingleton<BackupRestorePage>();
+            services.AddSingleton<BackupPage>();
+            services.AddSingleton<RestorePage>();
             services.AddSingleton<SettingsPage>();
         }
     }

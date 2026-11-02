@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace UniversalBackupTool.ViewModel.ViewModels.BackupRestore
+namespace UniversalBackupTool.ViewModel.ViewModels.Backup
 {
     /// <summary>
     /// One group of the Backup profile picker: the games managed by Vortex, or the other games. A backup never mixes the

@@ -11,6 +11,14 @@ namespace UniversalBackupTool.Interface.Interfaces.Backups
         Task<BackupManifest?> ReadManifestAsync(string backupDirectory, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// The complete backups of a game in the backup destination, newest first: every dated folder with a valid
+        /// manifest under &lt;root&gt;\&lt;game&gt;, in a component folder or (older backups) directly. Backups waiting for
+        /// Continue Backup, backups with nothing to restore and unreadable manifests are left out. A missing folder gives
+        /// an empty list. <paramref name="gameName"/> is a profile's game name or <see cref="VortexAppDataBackup.FolderName"/>.
+        /// </summary>
+        Task<IReadOnlyList<LocatedBackupManifest>> FindBackupsAsync(string backupRoot, string gameName, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Resolves where each part of the backup will be restored, using the current paths of the matching profile.
         /// Vortex AppData parts (the shared backups and older per-game ones) go to <paramref name="vortexAppDataPath"/>,
         /// the folder from the settings, or to the path stored in the backup when it is empty.

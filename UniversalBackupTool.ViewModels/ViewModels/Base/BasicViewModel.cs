@@ -7,6 +7,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Base
 {
     public abstract partial class BasicViewModel : ObservableObject
     {
+        private const int MaxListedPaths = 20;
+
         protected BasicViewModel(IOperationOutputService output, IOperationCoordinator coordinator)
         {
             Output = output ?? throw new ArgumentNullException(nameof(output));
@@ -42,6 +44,20 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Base
         protected void ReportWarning(string message) => Output.Write(message, OutputSeverity.Warning);
 
         protected void ReportError(string message) => Output.Write(message, OutputSeverity.Error);
+
+        /// <summary>
+        /// Writes a warning with the first paths of a list of files an operation could not process.
+        /// </summary>
+        protected void ReportFailedFiles(IReadOnlyList<string> paths, string description)
+        {
+            ReportWarning($"{paths.Count:N0} {description}:");
+
+            foreach (var path in paths.Take(MaxListedPaths))
+                ReportWarning("    " + path);
+
+            if (paths.Count > MaxListedPaths)
+                ReportWarning($"    ... and {paths.Count - MaxListedPaths:N0} more.");
+        }
 
         /// <summary>
         /// Runs a short page action while IsBusy is set. Re-entrant calls are ignored and failures are written to the Output panel.

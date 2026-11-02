@@ -48,6 +48,71 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
         }
 
+        public Task<IReadOnlyList<LocatedBackupManifest>> FindBackupsAsync(string backupRoot, string gameName, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(backupRoot);
+            ArgumentException.ThrowIfNullOrWhiteSpace(gameName);
+
+            var gameDirectory = Path.Combine(backupRoot, BackupLocations.SanitizeFileName(gameName));
+
+            // The destination is often a cloud drive: even listing its folders can take a while.
+            return Task.Run(() => ReadBackupsAsync(gameDirectory, cancellationToken), cancellationToken);
+        }
+
+        private async Task<IReadOnlyList<LocatedBackupManifest>> ReadBackupsAsync(string gameDirectory, CancellationToken cancellationToken)
+        {
+            var backups = new List<LocatedBackupManifest>();
+
+            foreach (var directory in FindManifestDirectories(gameDirectory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var manifest = await ReadManifestAsync(directory, cancellationToken);
+
+                    if (manifest is { Units.Count: > 0 })
+                        backups.Add(new LocatedBackupManifest(directory, manifest));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+
+            return backups.OrderByDescending(backup => backup.Manifest.CreatedAt).ToList();
+        }
+
+        private static IEnumerable<string> FindManifestDirectories(string gameDirectory)
+        {
+            foreach (var folder in GetBackupSubfolders(gameDirectory))
+            {
+                if (HasManifest(folder))
+                {
+                    yield return folder;
+                    continue;
+                }
+
+                foreach (var snapshot in GetBackupSubfolders(folder).Where(HasManifest))
+                    yield return snapshot;
+            }
+        }
+
+        private static bool HasManifest(string directory) => File.Exists(Path.Combine(directory, BackupManifest.FileName));
+
+        private static List<string> GetBackupSubfolders(string directory)
+        {
+            try
+            {
+                return Directory.EnumerateDirectories(directory)
+                    .Where(folder => !string.Equals(Path.GetFileName(folder), "_archives", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return [];
+            }
+        }
+
         public IReadOnlyList<RestorePlanItem> BuildPlan(
             BackupManifest manifest,
             IReadOnlyCollection<BackupProfile> profiles,

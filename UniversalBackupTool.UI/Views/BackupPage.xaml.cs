@@ -1,15 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
 
-using UniversalBackupTool.ViewModel.ViewModels.BackupRestore;
+using UniversalBackupTool.ViewModel.ViewModels.Backup;
 
 namespace UniversalBackupTool.UI.Views
 {
-    public partial class BackupRestorePage : Page
+    public partial class BackupPage : Page
     {
-        private readonly BackupRestoreViewModel _viewModel;
+        private readonly BackupViewModel _viewModel;
 
-        public BackupRestorePage(BackupRestoreViewModel viewModel)
+        public BackupPage(BackupViewModel viewModel)
         {
             _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 
