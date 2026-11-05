@@ -22,6 +22,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             /// An empty folder entry: part of the archive, but not a file.
             /// </summary>
             Folder,
+
             Missing,
 
             /// <summary>
