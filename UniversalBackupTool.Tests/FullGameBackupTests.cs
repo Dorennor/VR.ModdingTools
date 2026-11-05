@@ -116,6 +116,29 @@ namespace UniversalBackupTool.Tests
         }
 
         [Test]
+        public async Task RestrictedGame_KeepsItsOldArchive_WhileTheOtherGameIsBackedUp()
+        {
+            var leftover = CreateProfile("Leftover", Path.Combine(_root, "leftover"));
+            Write(leftover.GameRootPath!, "logs/game.log", "uninstall leftovers");
+            var oldArchive = Write(_export, "Leftover.zip", "the good archive");
+            var installed = CreateProfile();
+            var options = FullGameOnly with
+            {
+                RestrictedGames = new Dictionary<Guid, GamePresence> { [leftover.Id] = new(leftover.Id, false, false, false, false) }
+            };
+
+            var batch = await _runner.RunBackupAsync([leftover, installed], options, Settings());
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.ReadAllText(oldArchive), Is.EqualTo("the good archive"));
+                Assert.That(batch.Results.Single().GameName, Is.EqualTo("Witcher"));
+                Assert.That(File.Exists(ArchivePath()), Is.True);
+                Assert.That(batch.Warnings, Has.One.Contains("\"Leftover\": skipped full game"));
+            });
+        }
+
+        [Test]
         public async Task Links_AreStoredAsRealFiles()
         {
             var staging = Path.Combine(_root, "staging");

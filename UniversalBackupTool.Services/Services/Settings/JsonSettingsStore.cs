@@ -58,6 +58,9 @@ namespace UniversalBackupTool.Service.Services.Settings
                 if (settings.DefaultsVersion < AppSettings.ParallelArchivesVersion && settings.ParallelArchives < 1)
                     settings = settings with { ParallelArchives = AppSettings.DefaultParallelArchives };
 
+                if (settings.DefaultsVersion < AppSettings.ShowOnlyInstalledGamesVersion)
+                    settings = settings with { ShowOnlyInstalledGames = true };
+
                 settings = AddNewDefaults(settings);
                 await SaveAsync(filePath, settings, cancellationToken);
             }

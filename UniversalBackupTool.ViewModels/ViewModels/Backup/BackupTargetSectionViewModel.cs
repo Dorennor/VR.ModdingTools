@@ -62,7 +62,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
             ? $"{SelectedCount} of {ShownCount} selected · clear the {_otherSectionName} selection to pick these"
             : $"{SelectedCount} of {ShownCount} selected";
 
-        private int ShownCount => Targets.Count(target => target.IsOnDisk);
+        private int ShownCount => Targets.Count(target => target.IsListed);
 
         /// <summary>
         /// True when every listed game of the section (the matching ones while searching) is selected.
@@ -85,7 +85,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
         {
             VisibleTargets.Clear();
 
-            foreach (var target in Targets.Where(target => target.IsOnDisk && (filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase))))
+            foreach (var target in Targets.Where(target => target.IsListed && (filter.Length == 0 || target.GameName.Contains(filter, StringComparison.CurrentCultureIgnoreCase))))
                 VisibleTargets.Add(target);
 
             OnPropertyChanged(nameof(IsVisible));

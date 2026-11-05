@@ -13,8 +13,6 @@ namespace UniversalBackupTool.Model.Models.Storage
 
         public string ProfilesFilePath => Path.Combine(BaseDirectory, "profiles.json");
 
-        public string GameSizesFilePath => Path.Combine(BaseDirectory, "game_sizes.json");
-
         public string LogsDirectory => Path.Combine(BaseDirectory, "Logs");
 
         public string TempDirectory => Path.Combine(BaseDirectory, "Temp");

@@ -1,6 +1,8 @@
-using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using UniversalBackupTool.Interface.Interfaces.Profiles;
+using UniversalBackupTool.Interfaces.Snapshots;
+using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Profiles;
 
 namespace UniversalBackupTool.Service.Services.Profiles
@@ -8,15 +10,29 @@ namespace UniversalBackupTool.Service.Services.Profiles
     public sealed class GamePresenceService : IGamePresenceService
     {
         /// <summary>
-        /// A folder below this share of its remembered size no longer counts as the game. Deliberately generous: mods come
-        /// and go, and purging a Vortex deployment shrinks a game folder a lot.
+        /// Below this share of the vanilla snapshot's bytes the folder no longer counts as the game. Deliberately generous:
+        /// updates move and rename files, while an uninstall leaves next to none of them.
         /// </summary>
-        private const double MinimumSizeRatio = 0.5;
+        private const double MinimumSnapshotShare = 0.5;
 
-        private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+        /// <summary>
+        /// Without a snapshot or Steam manifest, a folder needs this much real game data. Small enough for tiny games, large
+        /// enough for what uninstalls leave behind. A smaller game counts once it has a vanilla snapshot.
+        /// </summary>
+        private const long MinimumGameDataBytes = 10L * 1024 * 1024;
+
+        /// <summary>
+        /// What stays behind after an uninstall: logs, crash dumps, settings and saves. These never count as game data.
+        /// </summary>
+        private static readonly HashSet<string> LeftoverExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".log", ".txt", ".dmp", ".mdmp", ".tmp", ".bak", ".old", ".ini", ".cfg", ".json", ".xml", ".csv", ".sav", ".save"
+        };
+
+        private static readonly Regex InstallDirPattern = new("\"installdir\"\\s+\"([^\"]+)\"", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // Links are skipped, so nothing outside the folder is counted or visited. A hardlink counts as a normal file.
-        private static readonly EnumerationOptions SizeScan = new()
+        private static readonly EnumerationOptions FolderScan = new()
         {
             RecurseSubdirectories = true,
             IgnoreInaccessible = true,
@@ -24,175 +40,151 @@ namespace UniversalBackupTool.Service.Services.Profiles
             ReturnSpecialDirectories = false
         };
 
-        private readonly object _measuredLock = new();
-        private readonly Dictionary<string, Task<long?>> _measured = new(StringComparer.OrdinalIgnoreCase);
-        private readonly SemaphoreSlim _rememberedGate = new(1, 1);
-        private Dictionary<string, long>? _remembered;
+        private readonly ISnapshotStore _snapshotStore;
+        private readonly IAppStoragePathsProvider _storagePathsProvider;
 
-        public bool FoldersExist(BackupProfile profile)
+        public GamePresenceService(ISnapshotStore snapshotStore, IAppStoragePathsProvider storagePathsProvider)
+        {
+            _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
+            _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
+        }
+
+        public GamePresence CheckFoldersExist(BackupProfile profile)
         {
             ArgumentNullException.ThrowIfNull(profile);
 
-            var folders = GetCheckedFolders(profile);
-
-            if (folders.Count > 0)
-                return folders.Any(Directory.Exists);
-
-            var customPaths = profile.CustomFolders.Where(path => !string.IsNullOrWhiteSpace(path)).ToList();
-
-            return customPaths.Count == 0 || customPaths.Any(path => Directory.Exists(path) || File.Exists(path));
+            return CreatePresence(
+                profile,
+                GetGameFolder(profile) is { } game && Directory.Exists(game),
+                GetStagingFolder(profile) is { } staging && Directory.Exists(staging));
         }
 
-        public async Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles, string sizesFilePath)
+        public Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles)
         {
             ArgumentNullException.ThrowIfNull(profiles);
 
-            var folders = profiles.SelectMany(GetCheckedFolders).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var sizes = new Dictionary<string, long?>(StringComparer.OrdinalIgnoreCase);
-
-            // A folder that is not there now is not measured, so a disconnected drive is simply measured once it is back.
-            foreach (var folder in folders.Where(Directory.Exists))
-                sizes[folder] = await GetSizeAsync(folder);
-
-            await _rememberedGate.WaitAsync();
-
-            try
+            return Task.Run<IReadOnlyList<GamePresence>>(async () =>
             {
-                var remembered = await GetRememberedAsync(sizesFilePath);
-                var updated = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+                var steamLibraries = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 var results = new List<GamePresence>(profiles.Count);
-
-                // Folders that did not pass keep their remembered size: the drive may be back, the game may be reinstalled.
-                foreach (var folder in folders)
-                {
-                    if (remembered.TryGetValue(folder, out var size))
-                        updated[folder] = size;
-                }
 
                 foreach (var profile in profiles)
                 {
-                    var checkedFolders = GetCheckedFolders(profile);
+                    var staging = GetStagingFolder(profile);
 
-                    if (checkedFolders.Count == 0)
-                    {
-                        results.Add(new GamePresence(profile.Id, FoldersExist(profile) ? GamePresenceState.OnDisk : GamePresenceState.Missing));
-                        continue;
-                    }
-
-                    var states = checkedFolders.Select(folder => EvaluateFolder(folder, sizes, remembered, updated)).ToList();
-
-                    results.Add(new GamePresence(profile.Id, states.Contains(GamePresenceState.OnDisk)
-                        ? GamePresenceState.OnDisk
-                        : states.Contains(GamePresenceState.TooSmall) ? GamePresenceState.TooSmall : GamePresenceState.Missing));
+                    results.Add(CreatePresence(
+                        profile,
+                        await IsGameInstalledAsync(profile, steamLibraries),
+                        staging is not null && HasAnyFile(staging)));
                 }
-
-                await SaveIfChangedAsync(sizesFilePath, updated);
 
                 return results;
-            }
-            finally
-            {
-                _rememberedGate.Release();
-            }
-        }
-
-        public async Task AcceptCurrentSizesAsync(IReadOnlyCollection<BackupProfile> profiles, string sizesFilePath)
-        {
-            ArgumentNullException.ThrowIfNull(profiles);
-
-            var folders = profiles.SelectMany(GetCheckedFolders).Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
-
-            lock (_measuredLock)
-            {
-                foreach (var folder in folders)
-                    _measured.Remove(folder);
-            }
-
-            var sizes = new Dictionary<string, long?>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var folder in folders)
-                sizes[folder] = await GetSizeAsync(folder);
-
-            await _rememberedGate.WaitAsync();
-
-            try
-            {
-                var updated = new Dictionary<string, long>(await GetRememberedAsync(sizesFilePath), StringComparer.OrdinalIgnoreCase);
-
-                foreach (var (folder, size) in sizes)
-                {
-                    if (size > 0)
-                        updated[folder] = size.Value;
-                }
-
-                await SaveIfChangedAsync(sizesFilePath, updated);
-            }
-            finally
-            {
-                _rememberedGate.Release();
-            }
-        }
-
-        private static GamePresenceState EvaluateFolder(
-            string folder,
-            Dictionary<string, long?> sizes,
-            Dictionary<string, long> remembered,
-            Dictionary<string, long> updated)
-        {
-            if (!sizes.TryGetValue(folder, out var size))
-                return GamePresenceState.Missing;
-
-            // Could not be measured: it exists, and an unreadable folder must not hide a game.
-            if (size is null)
-                return GamePresenceState.OnDisk;
-
-            if (size == 0)
-                return GamePresenceState.Missing;
-
-            if (remembered.TryGetValue(folder, out var rememberedSize) && size < rememberedSize * MinimumSizeRatio)
-                return GamePresenceState.TooSmall;
-
-            updated[folder] = size.Value;
-
-            return GamePresenceState.OnDisk;
+            });
         }
 
         /// <summary>
-        /// The folders that decide whether the game is there. Custom paths do not count when a game or staging folder is
-        /// set: they are usually saves and configs in Documents, which stay behind after an uninstall.
+        /// Custom paths only say whether a game is there when it has no game or staging folder set: they are usually saves
+        /// and configs in Documents, which stay behind after an uninstall. A profile with no paths at all counts as there.
         /// </summary>
-        private static List<string> GetCheckedFolders(BackupProfile profile)
+        private static GamePresence CreatePresence(BackupProfile profile, bool hasGameFolder, bool hasStaging)
         {
-            var folders = new List<string>(2);
+            var customPaths = profile.CustomFolders.Where(path => !string.IsNullOrWhiteSpace(path)).ToList();
+            var hasCustomPaths = customPaths.Any(path => Directory.Exists(path) || File.Exists(path));
+            var hasOwnFolders = GetGameFolder(profile) is not null || GetStagingFolder(profile) is not null;
 
-            if (!string.IsNullOrWhiteSpace(profile.GameRootPath))
-                folders.Add(Path.TrimEndingDirectorySeparator(profile.GameRootPath.Trim()));
-
-            if (profile.UsesVortex && !string.IsNullOrWhiteSpace(profile.VortexStagingPath))
-                folders.Add(Path.TrimEndingDirectorySeparator(profile.VortexStagingPath.Trim()));
-
-            return folders;
+            return new GamePresence(
+                profile.Id,
+                hasGameFolder || (!hasOwnFolders && (customPaths.Count == 0 || hasCustomPaths)),
+                hasGameFolder,
+                hasStaging,
+                hasCustomPaths);
         }
 
-        private Task<long?> GetSizeAsync(string folder)
+        private async Task<bool> IsGameInstalledAsync(BackupProfile profile, Dictionary<string, HashSet<string>> steamLibraries)
         {
-            lock (_measuredLock)
+            if (GetGameFolder(profile) is not { } folder || !HasAnyFile(folder))
+                return false;
+
+            if (IsListedBySteam(folder, steamLibraries))
+                return true;
+
+            return await HasSnapshotContentAsync(profile, folder) ?? HasGameData(folder);
+        }
+
+        /// <summary>
+        /// True when the folder lies in a Steam library (steamapps\common\name) and a manifest there names it.
+        /// </summary>
+        private static bool IsListedBySteam(string folder, Dictionary<string, HashSet<string>> steamLibraries)
+        {
+            for (var game = new DirectoryInfo(folder); game.Parent is { } common; game = common)
             {
-                if (!_measured.TryGetValue(folder, out var measurement))
+                if (common.Parent is not { } steamApps
+                    || !common.Name.Equals("common", StringComparison.OrdinalIgnoreCase)
+                    || !steamApps.Name.Equals("steamapps", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!steamLibraries.TryGetValue(steamApps.FullName, out var installDirs))
                 {
-                    measurement = Task.Run(() => MeasureFolder(folder));
-                    _measured[folder] = measurement;
+                    installDirs = ReadSteamInstallDirs(steamApps);
+                    steamLibraries[steamApps.FullName] = installDirs;
                 }
 
-                return measurement;
+                return installDirs.Contains(game.Name);
             }
+
+            return false;
         }
 
-        private static long? MeasureFolder(string folder)
+        private static HashSet<string> ReadSteamInstallDirs(DirectoryInfo steamApps)
+        {
+            var installDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                foreach (var manifest in steamApps.EnumerateFiles("appmanifest_*.acf"))
+                {
+                    var match = InstallDirPattern.Match(File.ReadAllText(manifest.FullName));
+
+                    if (match.Success)
+                        installDirs.Add(match.Groups[1].Value);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // The manifests are only one of the checks; the next ones decide.
+            }
+
+            return installDirs;
+        }
+
+        /// <summary>
+        /// Whether enough of the vanilla snapshot's bytes are still in place, or null without a usable snapshot. Only looks
+        /// at paths, so vanilla files changed by an update or replaced by a mod still count. Leftover deployed mods do not:
+        /// they were never part of the snapshot.
+        /// </summary>
+        private async Task<bool?> HasSnapshotContentAsync(BackupProfile profile, string folder)
         {
             try
             {
-                return new DirectoryInfo(folder).EnumerateFiles("*", SizeScan).Sum(file => file.Length);
+                var snapshot = await _snapshotStore.LoadAsync(_storagePathsProvider.GetPaths().SnapshotsDirectory, profile.Id);
+                var files = snapshot?.Data.Files.Values.Where(file => !file.IsLink && file.SizeBytes > 0).OrderByDescending(file => file.SizeBytes).ToList();
+
+                if (files is null or { Count: 0 })
+                    return null;
+
+                var required = files.Sum(file => file.SizeBytes) * MinimumSnapshotShare;
+                long found = 0;
+
+                foreach (var file in files)
+                {
+                    if (File.Exists(Path.Combine(folder, file.RelativePath)))
+                        found += file.SizeBytes;
+
+                    if (found >= required)
+                        return true;
+                }
+
+                return false;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
@@ -200,56 +192,47 @@ namespace UniversalBackupTool.Service.Services.Profiles
             }
         }
 
-        private async Task<Dictionary<string, long>> GetRememberedAsync(string sizesFilePath)
+        private static bool HasGameData(string folder)
         {
-            if (_remembered is not null)
-                return _remembered;
-
-            var remembered = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-
-            if (File.Exists(sizesFilePath))
+            try
             {
-                try
-                {
-                    await using var stream = File.OpenRead(sizesFilePath);
-                    var stored = await JsonSerializer.DeserializeAsync<Dictionary<string, long>>(stream, JsonOptions);
+                long total = 0;
 
-                    if (stored is not null)
-                        remembered = new Dictionary<string, long>(stored, StringComparer.OrdinalIgnoreCase);
-                }
-                catch (JsonException)
+                foreach (var file in new DirectoryInfo(folder).EnumerateFiles("*", FolderScan))
                 {
-                    // Only remembered sizes are lost: every folder is simply accepted again at its current size.
+                    if (!LeftoverExtensions.Contains(file.Extension))
+                        total += file.Length;
+
+                    if (total >= MinimumGameDataBytes)
+                        return true;
                 }
+
+                return false;
             }
-
-            _remembered = remembered;
-
-            return remembered;
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // It exists but cannot be read to the end: that must not hide a game.
+                return true;
+            }
         }
 
-        private async Task SaveIfChangedAsync(string sizesFilePath, Dictionary<string, long> sizes)
+        private static bool HasAnyFile(string folder)
         {
-            var remembered = _remembered;
-
-            if (remembered is not null
-                && remembered.Count == sizes.Count
-                && sizes.All(item => remembered.TryGetValue(item.Key, out var size) && size == item.Value))
-                return;
-
-            var directory = Path.GetDirectoryName(sizesFilePath);
-
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
-
-            var tempPath = sizesFilePath + ".tmp";
-
-            await using (var stream = File.Create(tempPath))
-                await JsonSerializer.SerializeAsync(stream, sizes, JsonOptions);
-
-            File.Move(tempPath, sizesFilePath, overwrite: true);
-
-            _remembered = sizes;
+            try
+            {
+                return Directory.Exists(folder) && new DirectoryInfo(folder).EnumerateFiles("*", FolderScan).Any();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return true;
+            }
         }
+
+        private static string? GetGameFolder(BackupProfile profile) => NormalizeFolder(profile.GameRootPath);
+
+        private static string? GetStagingFolder(BackupProfile profile) => profile.UsesVortex ? NormalizeFolder(profile.VortexStagingPath) : null;
+
+        private static string? NormalizeFolder(string? path) =>
+            string.IsNullOrWhiteSpace(path) ? null : Path.TrimEndingDirectorySeparator(path.Trim());
     }
 }

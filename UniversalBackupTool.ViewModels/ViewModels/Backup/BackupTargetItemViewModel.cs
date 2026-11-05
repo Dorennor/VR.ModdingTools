@@ -10,6 +10,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
         {
             Profile = profile ?? throw new ArgumentNullException(nameof(profile));
             _isSelected = isSelected;
+            _presence = GamePresence.Unknown(profile.Id);
         }
 
         public BackupProfile Profile { get; }
@@ -26,10 +27,33 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
         private bool _isSelectable = true;
 
         /// <summary>
-        /// Whether the game is on this PC. Only "Show only installed games" (Settings) ever makes this anything but OnDisk.
+        /// What is on this PC of the game; decides its label and which components it can use.
         /// </summary>
-        public GamePresenceState Presence { get; set; } = GamePresenceState.OnDisk;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DisplayName))]
+        [NotifyPropertyChangedFor(nameof(IsDimmed))]
+        private GamePresence _presence;
 
-        public bool IsOnDisk => Presence == GamePresenceState.OnDisk;
+        /// <summary>
+        /// False while "Hide uninstalled games" hides this game.
+        /// </summary>
+        public bool IsListed { get; set; } = true;
+
+        public string DisplayName => Presence.IsInstalled
+            ? GameName
+            : Presence.HasStaging ? $"{GameName} (mods only)" : $"{GameName} (not installed)";
+
+        /// <summary>
+        /// Dims the name of a game that is not installed and has no mods here. A "mods only" game can still be backed up.
+        /// </summary>
+        public bool IsDimmed => !Presence.IsListed;
+
+        public bool CanBackUpStaging => Presence.HasStaging;
+
+        public bool CanBackUpGameFolder => Presence.HasGameFolder;
+
+        public bool CanBackUpFullGame => Presence.HasGameFolder && Profile.GetFullGameExportFolder() is not null;
+
+        public bool CanBackUpCustomPaths => Presence.HasCustomPaths;
     }
 }

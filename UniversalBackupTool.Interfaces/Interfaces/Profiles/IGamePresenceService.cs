@@ -3,29 +3,22 @@ using UniversalBackupTool.Model.Models.Profiles;
 namespace UniversalBackupTool.Interface.Interfaces.Profiles
 {
     /// <summary>
-    /// Tells which games are on this PC. A game counts as on disk while its game folder or (for Vortex games) its staging
-    /// folder is there, because either one still holds something to back up. A folder must not be empty and must have at
-    /// least half the size last remembered for it; growing is always fine. Profiles with neither folder are judged by
-    /// their custom paths, and a profile with no paths at all always counts as on disk.
+    /// Tells which games are installed on this PC and what is left to back up of the others. Nothing is remembered between
+    /// checks, so a reinstalled game or a reconnected drive counts again on the next check.
     /// </summary>
     public interface IGamePresenceService
     {
         /// <summary>
-        /// Instant check that only looks at whether the folders exist, without measuring anything.
+        /// Instant first answer that only looks at whether the folders exist. <see cref="CheckAsync"/> has the final word.
         /// </summary>
-        bool FoldersExist(BackupProfile profile);
+        GamePresence CheckFoldersExist(BackupProfile profile);
 
         /// <summary>
-        /// The full check. Each folder is measured once per application run, in the background, and existence is checked
-        /// on every call. Remembers the sizes of the folders that passed in the given file, which only keeps the folders
-        /// of these profiles, so pass all profiles.
+        /// The full check, off the calling thread. A game folder counts as the installed game when it is not empty and:
+        /// Steam lists it in a manifest of its library; else at least half of the vanilla snapshot's bytes are still in
+        /// place; else, without a snapshot, it holds real game data rather than only logs and settings. A missing Steam
+        /// manifest proves nothing, so such a folder goes on to the next checks.
         /// </summary>
-        Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles, string sizesFilePath);
-
-        /// <summary>
-        /// Measures the folders of these profiles again and remembers the result as their normal size, for a game that
-        /// really did shrink (mods removed, clean reinstall).
-        /// </summary>
-        Task AcceptCurrentSizesAsync(IReadOnlyCollection<BackupProfile> profiles, string sizesFilePath);
+        Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles);
     }
 }

@@ -1,22 +1,24 @@
 namespace UniversalBackupTool.Model.Models.Profiles
 {
-    public enum GamePresenceState
+    /// <summary>
+    /// What is on this PC of a game, as far as a backup is concerned.
+    /// </summary>
+    /// <param name="ProfileId">The game's profile.</param>
+    /// <param name="IsInstalled">The game itself is here. Also true for a profile without a game or staging folder whose custom paths exist, or that has no paths at all.</param>
+    /// <param name="HasGameFolder">The game folder holds the installed game, not just what an uninstall left behind.</param>
+    /// <param name="HasStaging">The profile uses Vortex and its staging folder holds files.</param>
+    /// <param name="HasCustomPaths">At least one of the profile's custom paths exists.</param>
+    public record GamePresence(Guid ProfileId, bool IsInstalled, bool HasGameFolder, bool HasStaging, bool HasCustomPaths)
     {
         /// <summary>
-        /// The game folder or the staging folder is on disk with a plausible size.
+        /// Whether "Hide uninstalled games" keeps the game in the list. Mods in staging keep it listed, with the components
+        /// it cannot use locked. Custom paths do not: they are usually saves, which stay behind after an uninstall.
         /// </summary>
-        OnDisk,
+        public bool IsListed => IsInstalled || HasStaging;
 
         /// <summary>
-        /// None of the game's folders exist, or they are empty.
+        /// Before anything was checked: nothing is hidden or locked.
         /// </summary>
-        Missing,
-
-        /// <summary>
-        /// A folder exists but is much smaller than the size remembered for it, as after an uninstall that left files behind.
-        /// </summary>
-        TooSmall
+        public static GamePresence Unknown(Guid profileId) => new(profileId, true, true, true, true);
     }
-
-    public record GamePresence(Guid ProfileId, GamePresenceState State);
 }

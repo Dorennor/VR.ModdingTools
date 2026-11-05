@@ -2,6 +2,7 @@ using UniversalBackupTool.Interface.Interfaces.Appearance;
 using UniversalBackupTool.Interface.Interfaces.Backups;
 using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Paths;
+using UniversalBackupTool.Interface.Interfaces.Profiles;
 using UniversalBackupTool.Interface.Interfaces.Vortex;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Jobs;
@@ -12,6 +13,7 @@ using UniversalBackupTool.Service.Services.Operations;
 using UniversalBackupTool.Service.Services.Paths;
 using UniversalBackupTool.Service.Services.Profiles;
 using UniversalBackupTool.Service.Services.Settings;
+using UniversalBackupTool.Service.Services.Snapshots;
 using UniversalBackupTool.ViewModel.ViewModels.Backup;
 using UniversalBackupTool.ViewModel.ViewModels.Dashboard;
 using UniversalBackupTool.ViewModel.ViewModels.Settings;
@@ -39,7 +41,13 @@ namespace UniversalBackupTool.Tests
 
         public IReadOnlyList<ExistingFullGameArchive> ExistingFullGameArchives { get; set; } = [];
 
-        public IReadOnlyList<ExistingFullGameArchive> FindExistingFullGameArchives(IReadOnlyList<BackupProfile> profiles) => ExistingFullGameArchives;
+        public Action<IReadOnlyList<BackupProfile>>? OnFindArchives { get; set; }
+
+        public IReadOnlyList<ExistingFullGameArchive> FindExistingFullGameArchives(IReadOnlyList<BackupProfile> profiles)
+        {
+            OnFindArchives?.Invoke(profiles);
+            return ExistingFullGameArchives;
+        }
 
         public Task<BackupBatchResult> ResumeBackupAsync(ActiveBackupJob job, AppSettings settings, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
             => Task.FromResult(new BackupBatchResult([], [], 0));
@@ -73,6 +81,32 @@ namespace UniversalBackupTool.Tests
         public void Apply(AppTheme theme) => Applied.Add(theme);
     }
 
+    /// <summary>
+    /// Every game has everything, for tests that are not about installed games.
+    /// </summary>
+    internal sealed class FakeGamePresence : IGamePresenceService
+    {
+        public GamePresence CheckFoldersExist(BackupProfile profile) => GamePresence.Unknown(profile.Id);
+
+        public Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles) =>
+            Task.FromResult<IReadOnlyList<GamePresence>>(profiles.Select(profile => GamePresence.Unknown(profile.Id)).ToList());
+    }
+
+    /// <summary>
+    /// A leftover folder: it exists, but the full check, which takes a while, says the game is gone.
+    /// </summary>
+    internal sealed class SlowLeftoverPresence(Task gate) : IGamePresenceService
+    {
+        public GamePresence CheckFoldersExist(BackupProfile profile) => new(profile.Id, true, true, false, false);
+
+        public async Task<IReadOnlyList<GamePresence>> CheckAsync(IReadOnlyCollection<BackupProfile> profiles)
+        {
+            await gate;
+
+            return profiles.Select(profile => new GamePresence(profile.Id, false, false, false, false)).ToList();
+        }
+    }
+
     internal sealed class FakeVortexProcess : IVortexProcessService
     {
         public bool IsRunning { get; set; }
@@ -97,6 +131,9 @@ namespace UniversalBackupTool.Tests
         private FakeDialogs _dialogs = null!;
         private FakeBackupJobRunner _runner = null!;
         private FakeVortexProcess _vortex = null!;
+        private IGamePresenceService _presence = null!;
+
+        private const int RealGameBytes = 11 * 1024 * 1024;
 
         [SetUp]
         public void SetUp()
@@ -108,6 +145,7 @@ namespace UniversalBackupTool.Tests
             _dialogs = new FakeDialogs();
             _runner = new FakeBackupJobRunner();
             _vortex = new FakeVortexProcess();
+            _presence = new FakeGamePresence();
         }
 
         [TearDown]
@@ -121,6 +159,23 @@ namespace UniversalBackupTool.Tests
         {
             var profiles = names.Select(name => new BackupProfile { GameName = name, VortexStagingPath = Path.Combine(_root, name) }).ToList();
             await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath, profiles);
+        }
+
+        /// <summary>
+        /// Vortex games with an export folder, so the Full game switch is not locked.
+        /// </summary>
+        private async Task<BackupViewModel> CreateFullGameBackupAsync(params string[] games)
+        {
+            var profiles = games.Select(name => new BackupProfile
+            {
+                GameName = name,
+                VortexStagingPath = Path.Combine(_root, name),
+                UseFullGameExportPath = true,
+                FullGameExportPath = Path.Combine(_root, "Export")
+            }).ToList();
+            await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath, profiles);
+
+            return await LoadBackupAsync();
         }
 
         private async Task<BackupViewModel> CreateBackupAsync(params string[] games)
@@ -140,7 +195,7 @@ namespace UniversalBackupTool.Tests
                 new FakeJobStateService(),
                 _dialogs,
                 _vortex,
-                new GamePresenceService(),
+                _presence,
                 _coordinator,
                 _output);
 
@@ -148,147 +203,277 @@ namespace UniversalBackupTool.Tests
             return viewModel;
         }
 
-        private async Task EnableOnlyInstalledGamesAsync()
-        {
-            var settingsPath = _paths.GetPaths().SettingsFilePath;
-
-            await new JsonSettingsStore().SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")) with { ShowOnlyInstalledGames = true });
-        }
-
         private string CreateGameFolder(string name, int sizeBytes)
         {
             var folder = Path.Combine(_root, name);
             Directory.CreateDirectory(folder);
-            File.WriteAllBytes(Path.Combine(folder, "game.bin"), new byte[sizeBytes]);
+            using var stream = File.Create(Path.Combine(folder, "game.bin"));
+            stream.SetLength(sizeBytes);
 
             return folder;
         }
 
-        [Test]
-        public async Task OnlyInstalledGames_Off_ListsGamesWithoutFolders()
+        private void UseRealPresenceCheck() => _presence = new GamePresenceService(new JsonSnapshotStore(), _paths);
+
+        private BackupProfile InstalledGame(string name, string? exportFolder = null) => new()
         {
-            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
+            GameName = name,
+            GameRootPath = CreateGameFolder(name, RealGameBytes),
+            UseFullGameExportPath = exportFolder is not null,
+            FullGameExportPath = exportFolder
+        };
+
+        private BackupProfile UninstalledGame(string name) => new()
+        {
+            GameName = name,
+            GameRootPath = Path.Combine(_root, "Uninstalled", name)
+        };
+
+        private BackupProfile ModsOnlyGame(string name) => UninstalledGame(name) with { VortexStagingPath = Path.GetDirectoryName(CreateGameFolder(Path.Combine("Staging", name, "Mod"), 10)) };
+
+        private async Task<BackupViewModel> LoadCheckedBackupAsync(params BackupProfile[] profiles)
+        {
+            UseRealPresenceCheck();
+            await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath, profiles);
+
+            var viewModel = await LoadBackupAsync();
+            await viewModel.InstalledGamesCheck;
+
+            return viewModel;
+        }
+
+        private static BackupTargetItemViewModel Target(BackupViewModel viewModel, string name) =>
+            viewModel.Targets.Single(target => target.GameName == name);
+
+        [Test]
+        public async Task HideUninstalled_IsOnByDefault_AndHidesGamesWithNothingToBackUp()
+        {
+            var viewModel = await LoadCheckedBackupAsync(InstalledGame("Skyrim"), UninstalledGame("Fallout 4"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.HideUninstalledGames, Is.True);
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Skyrim" }));
+                Assert.That(viewModel.VortexTargets.Summary, Is.EqualTo("0 of 1 selected"));
+                Assert.That(viewModel.HiddenGamesSummary, Does.Contain("Fallout 4"));
+            });
+        }
+
+        [Test]
+        public async Task HideUninstalled_NoGameInstalled_ExplainsTheEmptyList()
+        {
+            var viewModel = await LoadCheckedBackupAsync(UninstalledGame("Skyrim"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.HasNoVisibleTargets, Is.True);
+                Assert.That(viewModel.NoVisibleTargetsText, Does.Contain("Hide uninstalled games"));
+            });
+        }
+
+        [Test]
+        public async Task HideUninstalled_Off_ListsAndLabelsThem_AndTheChoiceIsSaved()
+        {
+            var viewModel = await LoadCheckedBackupAsync(InstalledGame("Skyrim"), UninstalledGame("Fallout 4"));
+
+            viewModel.HideUninstalledGames = false;
+            await viewModel.HideSettingSave;
+
+            var settings = await new JsonSettingsStore().LoadAsync(_paths.GetPaths().SettingsFilePath);
+            var reloaded = await LoadBackupAsync();
+            await reloaded.InstalledGamesCheck;
 
             Assert.Multiple(() =>
             {
                 Assert.That(viewModel.VortexTargets.VisibleTargets, Has.Count.EqualTo(2));
                 Assert.That(viewModel.HasHiddenGamesSummary, Is.False);
-                Assert.That(File.Exists(_paths.GetPaths().GameSizesFilePath), Is.False);
+                Assert.That(Target(viewModel, "Fallout 4").DisplayName, Is.EqualTo("Fallout 4 (not installed)"));
+                Assert.That(Target(viewModel, "Fallout 4").IsDimmed, Is.True);
+                Assert.That(Target(viewModel, "Skyrim").DisplayName, Is.EqualTo("Skyrim"));
+                Assert.That(settings.ShowOnlyInstalledGames, Is.False);
+                Assert.That(reloaded.HideUninstalledGames, Is.False);
+                Assert.That(reloaded.VortexTargets.VisibleTargets, Has.Count.EqualTo(2));
             });
         }
 
         [Test]
-        public async Task OnlyInstalledGames_On_HidesMissingGames()
-        {
-            CreateGameFolder("Skyrim", 100);
-            await EnableOnlyInstalledGamesAsync();
-
-            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
-            await viewModel.InstalledGamesCheck;
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(viewModel.VortexTargets.VisibleTargets.Select(target => target.GameName), Is.EqualTo(new[] { "Skyrim" }));
-                Assert.That(viewModel.VortexTargets.Summary, Is.EqualTo("0 of 1 selected"));
-                Assert.That(viewModel.Targets, Has.Count.EqualTo(2));
-                Assert.That(viewModel.HiddenGamesSummary, Does.Contain("Fallout 4"));
-                Assert.That(viewModel.HasShrunkGames, Is.False);
-            });
-        }
-
-        [Test]
-        public async Task OnlyInstalledGames_NoGameInstalled_ExplainsTheEmptyList()
-        {
-            await EnableOnlyInstalledGamesAsync();
-
-            var viewModel = await CreateBackupAsync("Skyrim");
-            await viewModel.InstalledGamesCheck;
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(viewModel.HasNoVisibleTargets, Is.True);
-                Assert.That(viewModel.NoVisibleTargetsText, Does.Contain("Show only installed games"));
-            });
-        }
-
-        [Test]
-        public async Task OnlyInstalledGames_GameGone_IsDeselectedOnReload_AndNotBackedUp()
-        {
-            var skyrim = CreateGameFolder("Skyrim", 100);
-            CreateGameFolder("Fallout 4", 100);
-            await EnableOnlyInstalledGamesAsync();
-
-            var viewModel = await CreateBackupAsync("Skyrim", "Fallout 4");
-            await viewModel.InstalledGamesCheck;
-            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
-
-            Directory.Delete(skyrim, recursive: true);
-            await viewModel.LoadCommand.ExecuteAsync(null);
-            await viewModel.InstalledGamesCheck;
-
-            IReadOnlyList<string> backedUp = [];
-            _runner.OnRun = (profiles, _) =>
-            {
-                backedUp = profiles.Select(profile => profile.GameName).ToList();
-                return new BackupBatchResult([], [], 0);
-            };
-            viewModel.IncludeStaging = true;
-            await viewModel.StartBackupCommand.ExecuteAsync(null);
-
-            Assert.That(backedUp, Is.EqualTo(new[] { "Fallout 4" }));
-        }
-
-        [Test]
-        public async Task OnlyInstalledGames_ShrunkGame_IsHiddenUntilItsSizeIsAccepted()
-        {
-            var skyrim = CreateGameFolder("Skyrim", 1000);
-            await EnableOnlyInstalledGamesAsync();
-
-            var first = await CreateBackupAsync("Skyrim");
-            await first.InstalledGamesCheck;
-            Assert.That(first.VortexTargets.VisibleTargets, Has.Count.EqualTo(1));
-
-            // The next application run: a new service measures again and compares with the remembered size.
-            File.WriteAllBytes(Path.Combine(skyrim, "game.bin"), new byte[100]);
-
-            var viewModel = await LoadBackupAsync();
-            await viewModel.InstalledGamesCheck;
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(viewModel.VortexTargets.VisibleTargets, Is.Empty);
-                Assert.That(viewModel.HasShrunkGames, Is.True);
-            });
-
-            await viewModel.AcceptCurrentSizesCommand.ExecuteAsync(null);
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(viewModel.VortexTargets.VisibleTargets, Has.Count.EqualTo(1));
-                Assert.That(viewModel.HasShrunkGames, Is.False);
-                Assert.That(viewModel.HasHiddenGamesSummary, Is.False);
-            });
-        }
-
-        [Test]
-        public async Task Settings_ShowOnlyInstalledGames_IsSavedAndOffForOldSettingsFiles()
+        public async Task HideUninstalled_SavingKeepsTheOtherSettings()
         {
             var store = new JsonSettingsStore();
             var settingsPath = _paths.GetPaths().SettingsFilePath;
-            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")));
+            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")) with { MaxPreservedBackupsPerGame = 7 });
 
-            var json = await File.ReadAllTextAsync(settingsPath);
-            await File.WriteAllTextAsync(settingsPath, System.Text.RegularExpressions.Regex.Replace(json, "\\s*\"ShowOnlyInstalledGames\":\\s*false,?", string.Empty));
+            var viewModel = await LoadCheckedBackupAsync(InstalledGame("Skyrim"));
 
-            var viewModel = new SettingsViewModel(store, _paths, _dialogs, new FakeThemeService(), _coordinator, _output);
-            await viewModel.LoadCommand.ExecuteAsync(null);
+            // Changed on the Settings page after the Backup page was loaded.
+            await store.SaveAsync(settingsPath, await store.LoadAsync(settingsPath) with { MaxPreservedBackupsPerGame = 9 });
 
-            Assert.That(viewModel.ShowOnlyInstalledGames, Is.False);
+            viewModel.HideUninstalledGames = false;
+            await viewModel.HideSettingSave;
 
-            viewModel.ShowOnlyInstalledGames = true;
-            await viewModel.SaveCommand.ExecuteAsync(null);
+            var saved = await store.LoadAsync(settingsPath);
 
-            Assert.That((await store.LoadAsync(settingsPath)).ShowOnlyInstalledGames, Is.True);
+            Assert.Multiple(() =>
+            {
+                Assert.That(saved.ShowOnlyInstalledGames, Is.False);
+                Assert.That(saved.MaxPreservedBackupsPerGame, Is.EqualTo(9));
+            });
+        }
+
+        [Test]
+        public async Task HidingAGame_DeselectsIt()
+        {
+            var viewModel = await LoadCheckedBackupAsync(InstalledGame("Skyrim"), UninstalledGame("Fallout 4"));
+            viewModel.HideUninstalledGames = false;
+            Target(viewModel, "Fallout 4").IsSelected = true;
+
+            viewModel.HideUninstalledGames = true;
+            await viewModel.HideSettingSave;
+
+            Assert.That(Target(viewModel, "Fallout 4").IsSelected, Is.False);
+        }
+
+        [Test]
+        public async Task ModsOnlyGame_StaysListed_WithItsGameComponentsLocked()
+        {
+            var viewModel = await LoadCheckedBackupAsync(ModsOnlyGame("Skyrim"));
+            viewModel.IncludeStaging = true;
+            viewModel.IncludeGameConfigs = true;
+            viewModel.IncludeFullGame = true;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.CanUseGameFolder, Is.True, "nothing is locked without a selection");
+                Assert.That(viewModel.IsGameConfigsOn, Is.True);
+                Assert.That(viewModel.HasLockedComponents, Is.False);
+            });
+
+            Target(viewModel, "Skyrim").IsSelected = true;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.VortexTargets.VisibleTargets.Single().DisplayName, Is.EqualTo("Skyrim (mods only)"));
+                Assert.That(Target(viewModel, "Skyrim").IsDimmed, Is.False);
+                Assert.That(viewModel.CanUseStaging, Is.True);
+                Assert.That(viewModel.IsStagingOn, Is.True);
+                Assert.That(viewModel.CanUseGameFolder, Is.False);
+                Assert.That(viewModel.IsGameConfigsOn, Is.False, "a locked switch reads Off");
+                Assert.That(viewModel.CanUseFullGame, Is.False);
+                Assert.That(viewModel.IsFullGameOn, Is.False);
+                Assert.That(viewModel.LockedComponentsSummary, Does.Contain("no selected game is installed"));
+            });
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.LastOptions!.IncludeStaging, Is.True);
+                Assert.That(_runner.LastOptions.IncludeGameConfigs, Is.False);
+                Assert.That(_runner.LastOptions.IncludeFullGame, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task LockedSwitch_KeepsTheUsersChoice_ForTheNextSelection()
+        {
+            var viewModel = await LoadCheckedBackupAsync(ModsOnlyGame("Skyrim"), InstalledGame("Fallout 4"));
+            viewModel.IncludeGameConfigs = true;
+
+            Target(viewModel, "Skyrim").IsSelected = true;
+            Assert.That(viewModel.IsGameConfigsOn, Is.False);
+
+            Target(viewModel, "Skyrim").IsSelected = false;
+            Target(viewModel, "Fallout 4").IsSelected = true;
+            Assert.That(viewModel.IsGameConfigsOn, Is.True);
+        }
+
+        [Test]
+        public async Task Locks_FollowWhatTheSelectedGamesHave()
+        {
+            var viewModel = await LoadCheckedBackupAsync(InstalledGame("No Export"), InstalledGame("With Export", Path.Combine(_root, "Export")));
+
+            Target(viewModel, "No Export").IsSelected = true;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.CanUseGameFolder, Is.True);
+                Assert.That(viewModel.CanUseFullGame, Is.False);
+                Assert.That(viewModel.CanUseStaging, Is.False);
+                Assert.That(viewModel.CanUseCustomPaths, Is.False);
+                Assert.That(viewModel.LockedComponentsSummary, Does.Contain("Full game is locked"));
+            });
+
+            Target(viewModel, "With Export").IsSelected = true;
+
+            Assert.That(viewModel.CanUseFullGame, Is.True, "stays available when one selected game can use it");
+        }
+
+        [Test]
+        public async Task MixedSelection_TellsTheRunnerWhichGamesAreRestricted_AndAsksOnlyAboutInstalledArchives()
+        {
+            var export = Path.Combine(_root, "Export");
+            var installed = InstalledGame("Fallout 4", export);
+            var modsOnly = ModsOnlyGame("Skyrim") with { UseFullGameExportPath = true, FullGameExportPath = export };
+            IReadOnlyList<BackupProfile> asked = [];
+            _runner.OnFindArchives = profiles => asked = profiles;
+
+            var viewModel = await LoadCheckedBackupAsync(installed, modsOnly);
+            viewModel.IncludeFullGame = true;
+            Target(viewModel, "Fallout 4").IsSelected = true;
+            Target(viewModel, "Skyrim").IsSelected = true;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.LastOptions!.IncludeFullGame, Is.True);
+                Assert.That(_runner.LastOptions.RestrictedGames![modsOnly.Id].HasGameFolder, Is.False);
+                Assert.That(asked.Select(profile => profile.GameName), Is.EqualTo(new[] { "Fallout 4" }));
+            });
+        }
+
+        [Test]
+        public async Task Backup_WaitsForTheFullCheck_BeforeDecidingWhatIsLocked()
+        {
+            var gate = new TaskCompletionSource();
+            var profile = UninstalledGame("Skyrim");
+
+            _presence = new SlowLeftoverPresence(gate.Task);
+            await new JsonProfileStore().SaveAsync(_paths.GetPaths().ProfilesFilePath, [profile]);
+
+            var viewModel = await LoadBackupAsync();
+            viewModel.HideUninstalledGames = false;
+            await viewModel.HideSettingSave;
+            viewModel.IncludeGameConfigs = true;
+            viewModel.IncludeVortexAppData = true;
+            Target(viewModel, "Skyrim").IsSelected = true;
+
+            var backup = viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.RunCount, Is.Zero);
+
+            gate.SetResult();
+            await backup;
+
+            // The folder exists, so the first answer allowed Game configs; the full check found only leftovers.
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.RunCount, Is.EqualTo(1));
+                Assert.That(_runner.LastOptions!.IncludeGameConfigs, Is.False);
+                Assert.That(_runner.LastOptions.IncludeVortexAppData, Is.True);
+            });
+        }
+
+        [TestCase(4, null, true, TestName = "OldSettings_AreSwitchedOnOnce")]
+        [TestCase(5, false, false, TestName = "CurrentSettings_KeepTheUsersChoice")]
+        public async Task HideUninstalled_Migration(int version, bool? stored, bool expected)
+        {
+            var store = new JsonSettingsStore();
+            var path = _paths.GetPaths().SettingsFilePath;
+            var field = stored is null ? string.Empty : $"\"ShowOnlyInstalledGames\": {stored.Value.ToString().ToLowerInvariant()}, ";
+            await File.WriteAllTextAsync(path, $$"""{ "GoogleDriveBackupPath": "D:\\Backups", "VortexAppDataPath": "C:\\Vortex", {{field}}"DefaultsVersion": {{version}} }""");
+
+            Assert.That((await store.LoadAsync(path)).ShowOnlyInstalledGames, Is.EqualTo(expected));
+            Assert.That((await store.LoadAsync(path)).ShowOnlyInstalledGames, Is.EqualTo(expected), "the upgrade is saved");
         }
 
         [Test]
@@ -516,7 +701,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task FullGame_ExistingArchive_IsConfirmedOnceWithItsPathAndSize()
         {
-            var viewModel = await CreateBackupAsync("Skyrim");
+            var viewModel = await CreateFullGameBackupAsync("Skyrim");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeFullGame = true;
             _runner.ExistingFullGameArchives = [new ExistingFullGameArchive("Skyrim", @"G:\Drive\Skyrim.zip", 3L * 1024 * 1024 * 1024)];
@@ -544,7 +729,7 @@ namespace UniversalBackupTool.Tests
         [Test]
         public async Task FullGame_WithoutExistingArchive_AsksNothing()
         {
-            var viewModel = await CreateBackupAsync("Skyrim");
+            var viewModel = await CreateFullGameBackupAsync("Skyrim");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeFullGame = true;
 
@@ -562,7 +747,7 @@ namespace UniversalBackupTool.Tests
         {
             await new JsonSettingsStore().SaveAsync(_paths.GetPaths().SettingsFilePath, AppSettings.Default(string.Empty));
 
-            var viewModel = await CreateBackupAsync("Skyrim");
+            var viewModel = await CreateFullGameBackupAsync("Skyrim");
             viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
             viewModel.IncludeStaging = true;
 

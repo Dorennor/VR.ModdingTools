@@ -112,18 +112,6 @@
                     </Grid>
                 </controls:SettingsCard>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Games" />
-
-                <controls:SettingsCard
-                    Description="Backup lists only games on this PC: the game folder or the staging folder exists, is not empty and has at least half the size remembered for it. Sizes are measured in the background at startup. Restore still lists every game."
-                    Header="Show only installed games"
-                    Icon="{ui:SymbolIcon Games24}">
-                    <ui:ToggleSwitch
-                        IsChecked="{Binding ShowOnlyInstalledGames, Mode=TwoWay}"
-                        OffContent="Off"
-                        OnContent="On" />
-                </controls:SettingsCard>
-
                 <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Compression" />
 
                 <controls:SettingsCard

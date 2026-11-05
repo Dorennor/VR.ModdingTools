@@ -87,12 +87,17 @@ namespace UniversalBackupTool.Service.Services.Backups
                 var profilePrefix = profiles.Count > 1 ? $"{profile.GameName} ({index + 1}/{profiles.Count})" : profile.GameName;
                 var profileResults = new List<BackupResult>();
                 var skippedComponentWarnings = new List<string>();
-                var componentList = ExpandPerComponentOptions(options, profile);
+                var restriction = options.RestrictedGames?.GetValueOrDefault(profile.Id);
+                var componentList = ExpandPerComponentOptions(options, profile, restriction);
+                var unavailable = DescribeUnavailableComponents(options, profile, restriction);
+
+                if (unavailable.Count > 0)
+                    batchWarnings.Add($"\"{profile.GameName}\": skipped {string.Join(", ", unavailable)}, because the game has nothing there on this PC.");
 
                 // A full game backup that does not happen never stops the other games of the run.
                 var fullGameNotRun = false;
 
-                if (options.IncludeFullGame && !componentList.Any(component => component.IncludeFullGame))
+                if (options.IncludeFullGame && restriction is not { HasGameFolder: false } && !componentList.Any(component => component.IncludeFullGame))
                 {
                     batchWarnings.Add($"\"{profile.GameName}\": no full game backup, because the profile has no export folder or no game folder. Set them on the Profiles page.");
                     fullGameNotRun = true;
@@ -101,7 +106,7 @@ namespace UniversalBackupTool.Service.Services.Backups
                 if (componentList.Count == 0)
                 {
                     // Only the shared Vortex AppData was selected: nothing to do per game.
-                    if (!fullGameNotRun && !(backupSharedAppData && profile.UsesVortex))
+                    if (unavailable.Count == 0 && !fullGameNotRun && !(backupSharedAppData && profile.UsesVortex))
                         batchWarnings.Add($"\"{profile.GameName}\" was skipped: it is not managed by Vortex, so the staging and Vortex AppData components do not apply to it.");
 
                     continue;
@@ -218,29 +223,64 @@ namespace UniversalBackupTool.Service.Services.Backups
         /// One option set per selected per-game component that applies to the profile: staging only applies to games
         /// managed by Vortex. Vortex AppData is not a per-game component: <see cref="RunBackupAsync"/> backs it up once.
         /// </summary>
-        private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options, BackupProfile profile)
+        private static List<BackupOptions> ExpandPerComponentOptions(BackupOptions options, BackupProfile profile, GamePresence? restriction)
         {
             var expanded = new List<BackupOptions>();
+            var hasGameFolder = restriction is not { HasGameFolder: false };
 
-            if (options.IncludeStaging && profile.UsesVortex)
+            if (options.IncludeStaging && profile.UsesVortex && restriction is not { HasStaging: false })
                 expanded.Add(new BackupOptions(true, false, false, false, options.Monolithic));
 
-            if (options.IncludeGameConfigs)
+            if (options.IncludeGameConfigs && hasGameFolder)
                 expanded.Add(new BackupOptions(false, true, false, false, options.Monolithic));
 
-            if (options.IncludeGameAdditions)
+            if (options.IncludeGameAdditions && hasGameFolder)
                 expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameAdditions: true));
 
-            if (options.IncludeGameChanges)
+            if (options.IncludeGameChanges && hasGameFolder)
                 expanded.Add(new BackupOptions(false, false, false, false, options.Monolithic, IncludeGameChanges: true));
 
-            if (options.IncludeCustomFolders)
+            if (options.IncludeCustomFolders && restriction is not { HasCustomPaths: false })
                 expanded.Add(new BackupOptions(false, false, false, true, options.Monolithic));
 
-            if (options.IncludeFullGame && profile.GetFullGameExportFolder() is not null && !string.IsNullOrWhiteSpace(profile.GameRootPath))
+            if (options.IncludeFullGame && hasGameFolder && profile.GetFullGameExportFolder() is not null && !string.IsNullOrWhiteSpace(profile.GameRootPath))
                 expanded.Add(new BackupOptions(false, false, false, false, IncludeFullGame: true));
 
             return expanded;
+        }
+
+        /// <summary>
+        /// The selected components <see cref="BackupOptions.RestrictedGames"/> rules out for this game, for the run's warnings.
+        /// </summary>
+        private static List<string> DescribeUnavailableComponents(BackupOptions options, BackupProfile profile, GamePresence? restriction)
+        {
+            var names = new List<string>();
+
+            if (restriction is null)
+                return names;
+
+            if (options.IncludeStaging && profile.UsesVortex && !restriction.HasStaging)
+                names.Add("staging");
+
+            if (!restriction.HasGameFolder)
+            {
+                if (options.IncludeGameConfigs)
+                    names.Add("game configs");
+
+                if (options.IncludeGameAdditions)
+                    names.Add("new game files");
+
+                if (options.IncludeGameChanges)
+                    names.Add("changed game files");
+
+                if (options.IncludeFullGame)
+                    names.Add("full game");
+            }
+
+            if (options.IncludeCustomFolders && !restriction.HasCustomPaths)
+                names.Add("custom paths");
+
+            return names;
         }
 
         private static string DescribeComponent(BackupOptions options)

@@ -16,8 +16,9 @@ namespace UniversalBackupTool.Model.Models.Settings
         public AppTheme Theme { get; init; } = AppTheme.System;
 
         /// <summary>
-        /// The Backup profile picker hides games that are not on this PC (see IGamePresenceService). Restore and the other
-        /// pages always list every profile. Off by default, also for settings files from before it existed.
+        /// The Backup profile picker hides games with nothing to back up on this PC (see IGamePresenceService); the switch is
+        /// on that page. Restore and the other pages always list every profile. On by default: settings files from before
+        /// defaults version 5 are switched on once, after which the user's choice stays.
         /// </summary>
         public bool ShowOnlyInstalledGames { get; init; }
 
@@ -144,10 +145,16 @@ namespace UniversalBackupTool.Model.Models.Settings
         /// <summary>
         /// Bumped whenever existing settings files need an upgrade on load: a new pattern in
         /// <see cref="VersionedDefaultIgnorePatterns"/> (versions 1 and 2), the global <see cref="VortexAppDataPath"/>
-        /// that replaced the per-profile AppData paths (version 3), or the compression speed settings
-        /// <see cref="NoCompressionExtensions"/> and <see cref="ParallelArchives"/> (version 4).
+        /// that replaced the per-profile AppData paths (version 3), the compression speed settings
+        /// <see cref="NoCompressionExtensions"/> and <see cref="ParallelArchives"/> (version 4), or
+        /// <see cref="ShowOnlyInstalledGames"/> becoming the default (version 5).
         /// </summary>
-        public const int CurrentDefaultsVersion = 4;
+        public const int CurrentDefaultsVersion = 5;
+
+        /// <summary>
+        /// The defaults version that turned <see cref="ShowOnlyInstalledGames"/> on by default.
+        /// </summary>
+        public const int ShowOnlyInstalledGamesVersion = 5;
 
         /// <summary>
         /// The defaults version that introduced <see cref="VortexAppDataPath"/>.
@@ -176,6 +183,7 @@ namespace UniversalBackupTool.Model.Models.Settings
             VortexAppDataPath = DefaultVortexAppDataPath,
             NoCompressionExtensions = [.. DefaultNoCompressionExtensions],
             ParallelArchives = DefaultParallelArchives,
+            ShowOnlyInstalledGames = true,
             DefaultsVersion = CurrentDefaultsVersion
         };
 
