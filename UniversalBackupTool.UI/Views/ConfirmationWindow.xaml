@@ -1,0 +1,93 @@
+<ui:FluentWindow
+    x:Class="UniversalBackupTool.UI.Views.ConfirmationWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Width="520"
+    MinHeight="0"
+    ExtendsContentIntoTitleBar="True"
+    Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+    ResizeMode="NoResize"
+    ShowInTaskbar="False"
+    SizeToContent="Height"
+    WindowBackdropType="Mica"
+    WindowCornerPreference="Round"
+    WindowStartupLocation="CenterOwner">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!--  Only the drag area and the close button (same as No): the title is the heading below.  -->
+        <ui:TitleBar
+            Grid.Row="0"
+            CanMaximize="False"
+            ShowMaximize="False"
+            ShowMinimize="False" />
+
+        <!--  A long message (several paths) scrolls; the buttons always stay visible.  -->
+        <ScrollViewer
+            Grid.Row="1"
+            Padding="24,0,24,24"
+            Focusable="False"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon
+                    Grid.Column="0"
+                    Margin="0,2,16,0"
+                    VerticalAlignment="Top"
+                    Filled="True"
+                    FontSize="28"
+                    Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                    Symbol="Warning24" />
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="HeadingText" Style="{StaticResource DialogTitleTextStyle}" />
+                    <TextBlock
+                        x:Name="MessageText"
+                        Margin="0,12,0,0"
+                        Style="{StaticResource BodyTextStyle}" />
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <!--  Command bar as in a Windows 11 dialog. No is the default: Enter and Esc never confirm.  -->
+        <Border
+            Grid.Row="2"
+            Padding="24"
+            Background="{DynamicResource LayerFillColorDefaultBrush}"
+            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="8" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:Button
+                    x:Name="YesButton"
+                    Grid.Column="0"
+                    HorizontalAlignment="Stretch"
+                    Appearance="Primary"
+                    Click="OnYesClick"
+                    Content="Yes" />
+                <ui:Button
+                    x:Name="NoButton"
+                    Grid.Column="2"
+                    HorizontalAlignment="Stretch"
+                    Content="No"
+                    IsCancel="True"
+                    IsDefault="True" />
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>
