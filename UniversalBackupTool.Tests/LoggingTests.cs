@@ -63,8 +63,8 @@ namespace UniversalBackupTool.Tests
         public void FirstWrite_DeletesLogsOlderThanRetention()
         {
             Directory.CreateDirectory(_writer.LogsDirectory);
-            var old = Path.Combine(_writer.LogsDirectory, "log_2000-01-01.txt");
-            var recent = Path.Combine(_writer.LogsDirectory, "log_recent.txt");
+            var old = Path.Combine(_writer.LogsDirectory, "log_2000-01-01.log");
+            var recent = Path.Combine(_writer.LogsDirectory, "log_recent.log");
             File.WriteAllText(old, "old");
             File.WriteAllText(recent, "recent");
             File.SetLastWriteTime(old, DateTime.Now.AddDays(-(FileLogWriter.RetentionDays + 5)));
@@ -75,6 +75,49 @@ namespace UniversalBackupTool.Tests
             {
                 Assert.That(File.Exists(old), Is.False);
                 Assert.That(File.Exists(recent), Is.True);
+            });
+        }
+
+        [Test]
+        public void FirstWrite_RenamesLegacyTxtLogs_AndAppliesRetentionToThem()
+        {
+            Directory.CreateDirectory(_writer.LogsDirectory);
+            var expired = Path.Combine(_writer.LogsDirectory, "log_2000-01-01.txt");
+            var recent = Path.Combine(_writer.LogsDirectory, "log_2000-01-02.txt");
+            var unrelated = Path.Combine(_writer.LogsDirectory, "notes.txt");
+            File.WriteAllText(expired, "expired");
+            File.WriteAllText(recent, "recent");
+            File.WriteAllText(unrelated, "notes");
+            File.SetLastWriteTime(expired, DateTime.Now.AddDays(-(FileLogWriter.RetentionDays + 5)));
+
+            _writer.Append(new OutputEntry(DateTime.Now, OutputSeverity.Info, "hello"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.Exists(expired), Is.False);
+                Assert.That(File.Exists(Path.ChangeExtension(expired, ".log")), Is.False);
+                Assert.That(File.Exists(recent), Is.False);
+                Assert.That(File.ReadAllText(Path.ChangeExtension(recent, ".log")), Is.EqualTo("recent"));
+                Assert.That(File.Exists(unrelated), Is.True);
+                Assert.That(Path.GetExtension(_writer.GetLogPath(DateTime.Now)), Is.EqualTo(".log"));
+            });
+        }
+
+        [Test]
+        public void FirstWrite_KeepsLegacyLog_WhenRenamedFileAlreadyExists()
+        {
+            Directory.CreateDirectory(_writer.LogsDirectory);
+            var legacy = Path.Combine(_writer.LogsDirectory, "log_2000-01-01.txt");
+            var current = Path.ChangeExtension(legacy, ".log");
+            File.WriteAllText(legacy, "legacy");
+            File.WriteAllText(current, "current");
+
+            _writer.Append(new OutputEntry(DateTime.Now, OutputSeverity.Info, "hello"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.ReadAllText(legacy), Is.EqualTo("legacy"));
+                Assert.That(File.ReadAllText(current), Is.EqualTo("current"));
             });
         }
 

@@ -69,7 +69,7 @@ Create a portable Windows backup tool primarily for Vortex modpacks, but flexibl
   - Restore applies the same patterns to Game configs and Changed game files units only (relative to the game folder), so older backups do not bring Vortex files back. It uses the matching profile's switch, defaulting to on.
   - Vanilla snapshots and Purge never use the ignore list, so Purge removes Vortex's files like any other unregistered entry.
   - The first backup after adding a pattern re-archives the configs unit once, because its file list changes.
-- Log files (added 2026-10-31): `FileLogWriter` (`ILogFileWriter`) appends every Output entry to `Logs\log_yyyy-MM-dd.txt`. Logs older than 30 days are deleted on the first write of a session, and logging never throws. Unhandled UI, AppDomain and unobserved task exceptions are logged with full details; UI ones also appear in Output and do not close the app. The Output toolbar has "Open Logs folder"; Clear only empties the panel.
+- Log files (added 2026-10-31): `FileLogWriter` (`ILogFileWriter`) appends every Output entry to `Logs\log_yyyy-MM-dd.log`. Logs older than 30 days are deleted on the first write of a session, and logging never throws. Unhandled UI, AppDomain and unobserved task exceptions are logged with full details; UI ones also appear in Output and do not close the app. The Output toolbar has "Open Logs folder"; Clear only empties the panel.
   - Per-file archive log, so slow files can be found and their compression rule adjusted. `ArchiveService` writes through `ILogFileWriter.AppendDetail`, to the log file only (never the Output panel):
     - `Archiving: <path> (<size>, level <level>)` when a file starts;
     - `Archived:  <path> in <s> s (<size>, <speed>/s, level <level>)` when it finishes;

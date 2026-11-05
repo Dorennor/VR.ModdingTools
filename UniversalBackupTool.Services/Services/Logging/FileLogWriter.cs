@@ -7,7 +7,7 @@ using UniversalBackupTool.Model.Models.Operations;
 namespace UniversalBackupTool.Service.Services.Logging
 {
     /// <summary>
-    /// One log file per day (log_yyyy-MM-dd.txt) in the portable Logs folder; files older than
+    /// One log file per day (log_yyyy-MM-dd.log) in the portable Logs folder; files older than
     /// <see cref="RetentionDays"/> are removed the first time something is logged in a session.
     /// Normal entries are written immediately. Detail lines (one per archived file) are buffered and written about once
     /// per second, so a backup of many files does not open the log file for every line.
@@ -19,6 +19,8 @@ namespace UniversalBackupTool.Service.Services.Logging
         public const int RetentionDays = 30;
 
         private const int MaxBufferedCharacters = 256 * 1024;
+        private const string LogExtension = ".log";
+        private const string LegacyLogExtension = ".txt";
 
         private readonly object _gate = new();
         private readonly List<(DateTime Timestamp, string Text)> _pending = [];
@@ -76,7 +78,7 @@ namespace UniversalBackupTool.Service.Services.Logging
             Flush();
         }
 
-        public string GetLogPath(DateTime timestamp) => Path.Combine(LogsDirectory, $"log_{timestamp:yyyy-MM-dd}.txt");
+        public string GetLogPath(DateTime timestamp) => Path.Combine(LogsDirectory, $"log_{timestamp:yyyy-MM-dd}{LogExtension}");
 
         private void Write(DateTime timestamp, string text, bool flushNow)
         {
@@ -105,6 +107,7 @@ namespace UniversalBackupTool.Service.Services.Logging
                 if (!_cleanedUp)
                 {
                     _cleanedUp = true;
+                    RenameLegacyLogs();
                     DeleteExpiredLogs(DateTime.Now);
                 }
 
@@ -129,11 +132,33 @@ namespace UniversalBackupTool.Service.Services.Logging
             }
         }
 
+        /// <summary>
+        /// Logs were .txt files before. Renaming keeps the last write time, so retention still applies to them. A file
+        /// that cannot be renamed stays a .txt file and is removed by retention like any other log.
+        /// </summary>
+        private void RenameLegacyLogs()
+        {
+            foreach (var file in new DirectoryInfo(LogsDirectory).EnumerateFiles($"log_*{LegacyLogExtension}").ToList())
+            {
+                try
+                {
+                    var target = Path.ChangeExtension(file.FullName, LogExtension);
+
+                    if (!File.Exists(target))
+                        file.MoveTo(target);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
         private void DeleteExpiredLogs(DateTime now)
         {
             var cutoff = now.Date.AddDays(-RetentionDays);
+            var directory = new DirectoryInfo(LogsDirectory);
 
-            foreach (var file in new DirectoryInfo(LogsDirectory).EnumerateFiles("log_*.txt"))
+            foreach (var file in directory.EnumerateFiles($"log_*{LogExtension}").Concat(directory.EnumerateFiles($"log_*{LegacyLogExtension}")))
             {
                 if (file.LastWriteTime < cutoff)
                 {
