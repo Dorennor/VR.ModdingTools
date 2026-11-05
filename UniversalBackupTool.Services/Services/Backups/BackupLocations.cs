@@ -43,8 +43,20 @@ namespace UniversalBackupTool.Service.Services.Backups
                 BackupComponent.CustomFolders => "custom",
                 BackupComponent.GameChanges => "changes",
                 BackupComponent.GameAdditions => "additions",
+                BackupComponent.FullGame => "full",
                 _ => "misc"
             };
+        }
+
+        /// <summary>
+        /// The archive of a full game backup. The name never changes, so the previous archive is found exactly.
+        /// </summary>
+        public static string GetFullGameArchivePath(string exportFolder, BackupProfile profile)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(exportFolder);
+            ArgumentNullException.ThrowIfNull(profile);
+
+            return Path.Combine(exportFolder, SanitizeFileName(profile.GameName) + ".zip");
         }
 
         public static string SanitizeFileName(string name)

@@ -269,6 +269,16 @@
                         OnContent="On" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard
+                    Description="The whole game folder with all deployed mods and configs as one zip in the export folder of the game's profile, ready to unpack and play: links are stored as real files. Uses the ignore list and compression settings. The old archive is deleted first, after you confirm, so a cloud drive does not download it. Games without an export folder are skipped."
+                    Header="Full game"
+                    Icon="{ui:SymbolIcon CloudArrowUp24}">
+                    <ui:ToggleSwitch
+                        IsChecked="{Binding IncludeFullGame, Mode=TwoWay}"
+                        OffContent="Off"
+                        OnContent="On" />
+                </controls:SettingsCard>
+
                 <StackPanel Style="{StaticResource ActionBarPanelStyle}">
                     <ui:Button
                         Appearance="Primary"

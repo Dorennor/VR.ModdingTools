@@ -30,5 +30,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         public bool HasCustomFolders => Profile.CustomFolders.Count > 0;
 
         public string CustomFoldersText => string.Join(Environment.NewLine, Profile.CustomFolders);
+
+        public string? FullGameExportFolder => Profile.GetFullGameExportFolder();
+
+        public bool HasFullGameExportFolder => FullGameExportFolder is not null;
     }
 }

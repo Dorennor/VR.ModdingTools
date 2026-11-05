@@ -84,6 +84,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         private bool _editUseIgnoreList = true;
 
         [ObservableProperty]
+        private bool _editUseFullGameExportPath;
+
+        [ObservableProperty]
+        private string _editFullGameExportPath = string.Empty;
+
+        [ObservableProperty]
         private bool _isFindVisible;
 
         [ObservableProperty]
@@ -118,11 +124,19 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             set => SwapDrive(value, EditGameRootPath, path => EditGameRootPath = path, nameof(EditGameRootDrive));
         }
 
+        public string? EditFullGameExportDrive
+        {
+            get => _pathDriveService.GetDrive(EditFullGameExportPath);
+            set => SwapDrive(value, EditFullGameExportPath, path => EditFullGameExportPath = path, nameof(EditFullGameExportDrive));
+        }
+
         private string ProfilesFilePath => _storagePathsProvider.GetPaths().ProfilesFilePath;
 
         partial void OnEditVortexStagingPathChanged(string value) => OnPropertyChanged(nameof(EditVortexStagingDrive));
 
         partial void OnEditGameRootPathChanged(string value) => OnPropertyChanged(nameof(EditGameRootDrive));
+
+        partial void OnEditFullGameExportPathChanged(string value) => OnPropertyChanged(nameof(EditFullGameExportDrive));
 
         partial void OnSelectedFindPathChanged(ProfilePathEntry? value) => ClearFindResults();
 
@@ -146,6 +160,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditGameRootPath = string.Empty;
             SetEditCustomPaths([]);
             EditUseIgnoreList = true;
+            EditUseFullGameExportPath = false;
+            EditFullGameExportPath = string.Empty;
 
             IsFindVisible = false;
             IsEditing = true;
@@ -169,6 +185,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             EditGameRootPath = profile.GameRootPath ?? string.Empty;
             SetEditCustomPaths(profile.CustomFolders);
             EditUseIgnoreList = profile.UseIgnoreList;
+            EditUseFullGameExportPath = profile.UseFullGameExportPath;
+            EditFullGameExportPath = profile.FullGameExportPath ?? string.Empty;
 
             IsFindVisible = false;
             IsEditing = true;
@@ -206,7 +224,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                         VortexStagingPath = EditUsesVortex ? NullIfEmpty(EditVortexStagingPath) : null,
                         GameRootPath = NullIfEmpty(EditGameRootPath),
                         CustomFolders = customFolders,
-                        UseIgnoreList = EditUseIgnoreList
+                        UseIgnoreList = EditUseIgnoreList,
+                        UseFullGameExportPath = EditUseFullGameExportPath,
+                        FullGameExportPath = NullIfEmpty(EditFullGameExportPath)
                     };
 
                     var updated = Profiles.Select(item => item.Profile).ToList();
@@ -251,6 +271,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         [RelayCommand]
         private void BrowseGameRootPath() => PickInto(EditGameRootPath, path => EditGameRootPath = path);
+
+        [RelayCommand]
+        private void BrowseFullGameExportPath() => PickInto(EditFullGameExportPath, path => EditFullGameExportPath = path);
 
         [RelayCommand]
         private void AddCustomFolder()
@@ -475,6 +498,12 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     ? "Specify at least one source: Vortex staging folder, game folder or a custom path."
                     : "Specify at least one source: game folder or a custom path.";
             }
+
+            if (EditUseFullGameExportPath && string.IsNullOrWhiteSpace(EditFullGameExportPath))
+                return "Choose the export folder for full game backups, or turn the option off.";
+
+            if (EditUseFullGameExportPath && string.IsNullOrWhiteSpace(EditGameRootPath))
+                return "A full game backup needs the game folder. Set it, or turn the export folder off.";
 
             return null;
         }

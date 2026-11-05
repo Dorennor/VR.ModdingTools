@@ -276,7 +276,38 @@
                     </controls:SettingsCard>
 
                     <controls:SettingsCard
-                        Description="When backing up and restoring Game configs, skip game-folder files that match the ignore patterns from Settings (for example Vortex deployment manifests). Staging, AppData and custom paths are always backed up completely."
+                        Description="Where the Full game backup of this game goes, usually a Google Drive folder. The archive is named after the game; the old one is deleted before each new backup instead of being overwritten, so nothing is downloaded from the cloud. Without an export folder this game takes no full game backup."
+                        Header="Full game export folder"
+                        Icon="{ui:SymbolIcon CloudArrowUp24}"
+                        IsStacked="True">
+                        <StackPanel>
+                            <CheckBox Content="Use an export folder for this game" IsChecked="{Binding EditUseFullGameExportPath, Mode=TwoWay}" />
+                            <Grid Margin="0,8,0,0" Visibility="{Binding EditUseFullGameExportPath, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:TextBox Text="{Binding EditFullGameExportPath, UpdateSourceTrigger=PropertyChanged}" />
+                                <ComboBox
+                                    Grid.Column="1"
+                                    Width="76"
+                                    Margin="8,0,0,0"
+                                    ItemsSource="{Binding AvailableDrives}"
+                                    SelectedItem="{Binding EditFullGameExportDrive, Mode=TwoWay}"
+                                    ToolTip="Change only the drive letter" />
+                                <ui:Button
+                                    Grid.Column="2"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding BrowseFullGameExportPathCommand}"
+                                    Content="Browse"
+                                    Icon="{ui:SymbolIcon FolderOpen24}" />
+                            </Grid>
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard
+                        Description="When backing up and restoring Game configs, and for Full game backups, skip game-folder files that match the ignore patterns from Settings (for example Vortex deployment manifests). Staging, AppData and custom paths are always backed up completely."
                         Header="Filter game configs with the ignore list"
                         Icon="{ui:SymbolIcon Filter24}">
                         <ui:ToggleSwitch
@@ -389,6 +420,18 @@
                                                     Text="{Binding CustomFoldersText}"
                                                     TextTrimming="None"
                                                     TextWrapping="Wrap" />
+                                            </Grid>
+
+                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasFullGameExportFolder, Converter={StaticResource BoolToVisibility}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Full game export" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Style="{StaticResource PathTextStyle}"
+                                                    Text="{Binding FullGameExportFolder}" />
                                             </Grid>
 
                                             <Grid Style="{StaticResource ProfileFieldGridStyle}">

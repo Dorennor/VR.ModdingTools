@@ -265,6 +265,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
         private bool _includeCustomFolders;
 
         [ObservableProperty]
+        private bool _includeFullGame;
+
+        [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasPausedJob))]
         [NotifyPropertyChangedFor(nameof(PausedJobMessage))]
         private ActiveBackupJob? _pausedJob;
@@ -321,7 +324,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
                 IncludeVortexAppData && vortex,
                 IncludeCustomFolders,
                 IncludeGameChanges: IncludeGameChanges,
-                IncludeGameAdditions: IncludeGameAdditions);
+                IncludeGameAdditions: IncludeGameAdditions,
+                IncludeFullGame: IncludeFullGame);
 
             if (selected.Count == 0)
             {
@@ -341,7 +345,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
                 return;
             }
 
-            if (_settings is null || string.IsNullOrWhiteSpace(_settings.GoogleDriveBackupPath))
+            if (_settings is null || (options.UsesBackupDestination && string.IsNullOrWhiteSpace(_settings.GoogleDriveBackupPath)))
             {
                 ReportError("Backup: the backup destination folder is not configured. Set it on the Settings page.");
                 return;
@@ -351,6 +355,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
                 && !_confirmationService.Confirm(
                     "Vortex is running",
                     "Vortex is running. It keeps its database in the AppData folder open and keeps writing to it, so the Vortex AppData backup may be inconsistent or miss locked files. Close Vortex first for a reliable backup.\n\nBack up anyway?"))
+                return;
+
+            // Asked before the paused job is discarded, so saying no here changes nothing.
+            if (options.IncludeFullGame && !await ConfirmDeletingFullGameArchivesAsync(selected))
                 return;
 
             if (PausedJob is not null)
@@ -378,6 +386,38 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
                 // the games selected so it can be retried.
                 ClearTargetSelection();
             });
+        }
+
+        /// <summary>
+        /// Lists the old archives once, before the run. The destination is often a cloud drive, so this stays off the UI thread.
+        /// </summary>
+        private async Task<bool> ConfirmDeletingFullGameArchivesAsync(IReadOnlyList<BackupProfile> selected)
+        {
+            var existing = await Task.Run(() => _backupJobRunner.FindExistingFullGameArchives(selected));
+
+            if (existing.Count == 0)
+                return true;
+
+            var list = string.Join("\n", existing.Select(archive => $"{archive.ArchivePath} ({FormatSize(archive.Length)})"));
+
+            return _confirmationService.Confirm(
+                "Delete old full game archives",
+                $"These archives will be deleted before the new ones are written, not overwritten, so a cloud drive does not download them first:\n\n{list}\n\nIf the backup fails or is cancelled, that game has no archive until you run it again. A deleted file on Google Drive goes to its trash and normally counts against your storage until it is emptied.\n\nContinue?");
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            double value = bytes;
+            var unit = 0;
+
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return unit == 0 ? $"{bytes:N0} B" : $"{value:0.0} {units[unit]}";
         }
 
         [RelayCommand]
@@ -426,7 +466,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
         {
             foreach (var result in batch.Results)
             {
-                ReportInfo($"{result.GameName}: {result.FilesArchived:N0} file(s) written, snapshot {result.BackupDirectory}");
+                ReportInfo(result.FullGameArchivePath is null
+                    ? $"{result.GameName}: {result.FilesArchived:N0} file(s) written, snapshot {result.BackupDirectory}"
+                    : $"{result.GameName}: {result.FilesArchived:N0} file(s) written, full game archive {result.FullGameArchivePath}");
 
                 if (result.IgnoredFiles > 0)
                     ReportInfo($"{result.GameName}: game folder ignore list skipped {result.IgnoredFiles:N0} file(s), e.g. {string.Join(", ", result.IgnoredExamples)}");
@@ -435,7 +477,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
             foreach (var warning in batch.Results.SelectMany(result => result.Warnings).Concat(batch.Warnings))
                 ReportWarning(warning);
 
-            ReportSuccess($"Backup finished: {batch.ModsArchived:N0} changed/new mod(s) archived, {batch.ModsReused:N0} unchanged mod archive(s) reused, {batch.ModsRemoved:N0} removed mod(s) omitted from the new snapshot; {batch.FilesArchived:N0} file(s) written to {settings.GoogleDriveBackupPath}.");
+            if (batch.Results.All(result => result.FullGameArchivePath is not null))
+                ReportSuccess($"Backup finished: {batch.FilesArchived:N0} file(s) written to the full game archive(s).");
+            else
+                ReportSuccess($"Backup finished: {batch.ModsArchived:N0} changed/new mod(s) archived, {batch.ModsReused:N0} unchanged mod archive(s) reused, {batch.ModsRemoved:N0} removed mod(s) omitted from the new snapshot; {batch.FilesArchived:N0} file(s) written to {settings.GoogleDriveBackupPath}.");
 
             if (batch.FailedFiles.Count > 0)
                 ReportFailedFiles(batch.FailedFiles.Select(file => file.SourcePath).ToList(), "file(s) were in use and are missing from the archives. Close the game or Vortex, then select Continue Backup on the Backup page");
@@ -462,6 +507,9 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Backup
 
             if (options.IncludeCustomFolders)
                 names.Add("custom paths");
+
+            if (options.IncludeFullGame)
+                names.Add("full game");
 
             return string.Join(", ", names);
         }

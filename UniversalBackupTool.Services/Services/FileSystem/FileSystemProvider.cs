@@ -82,6 +82,7 @@ namespace UniversalBackupTool.Services
             var files = new List<FollowedFile>();
             var warnings = new List<string>();
             var linksFollowed = 0;
+            var emptyDirectories = new List<string>();
             var root = new DirectoryInfo(Path.GetFullPath(rootPath));
 
             if (!root.Exists)
@@ -97,9 +98,12 @@ namespace UniversalBackupTool.Services
 
             while (pending.TryPop(out var current))
             {
+                var isEmpty = true;
+
                 foreach (var info in current.Directory.EnumerateFileSystemInfos("*", SingleLevel))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    isEmpty = false;
                     var relative = GetRelativePath(root.FullName, info.FullName);
 
                     if (info is DirectoryInfo subdirectory)
@@ -169,9 +173,12 @@ namespace UniversalBackupTool.Services
 
                     files.Add(new FollowedFile(file.FullName, relative, false));
                 }
+
+                if (isEmpty && !string.Equals(current.Directory.FullName, root.FullName, StringComparison.OrdinalIgnoreCase))
+                    emptyDirectories.Add(GetRelativePath(root.FullName, current.Directory.FullName));
             }
 
-            return new FollowedScan(files, warnings, linksFollowed);
+            return new FollowedScan(files, warnings, linksFollowed) { EmptyDirectories = emptyDirectories };
         }
 
         public void DeleteEntry(ScannedEntry entry)

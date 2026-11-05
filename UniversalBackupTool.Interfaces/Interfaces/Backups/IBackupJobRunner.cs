@@ -19,6 +19,12 @@ namespace UniversalBackupTool.Interface.Interfaces.Backups
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// The archives a full game backup of these profiles will delete before it writes the new ones. Only looks at
+        /// file names and sizes, so nothing is downloaded from a cloud drive.
+        /// </summary>
+        IReadOnlyList<ExistingFullGameArchive> FindExistingFullGameArchives(IReadOnlyList<BackupProfile> profiles);
+
+        /// <summary>
         /// Retries the files that failed in a previous run and appends them to the existing archives.
         /// </summary>
         Task<BackupBatchResult> ResumeBackupAsync(

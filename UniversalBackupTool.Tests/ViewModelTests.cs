@@ -37,6 +37,10 @@ namespace UniversalBackupTool.Tests
             return Task.FromResult(OnRun(profiles, options));
         }
 
+        public IReadOnlyList<ExistingFullGameArchive> ExistingFullGameArchives { get; set; } = [];
+
+        public IReadOnlyList<ExistingFullGameArchive> FindExistingFullGameArchives(IReadOnlyList<BackupProfile> profiles) => ExistingFullGameArchives;
+
         public Task<BackupBatchResult> ResumeBackupAsync(ActiveBackupJob job, AppSettings settings, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
             => Task.FromResult(new BackupBatchResult([], [], 0));
     }
@@ -53,7 +57,13 @@ namespace UniversalBackupTool.Tests
 
         public IReadOnlyList<string> PickFiles(string? initialDirectory = null) => NextFiles.ToList();
 
-        public bool Confirm(string title, string message) => ConfirmResult;
+        public string? LastConfirmMessage { get; private set; }
+
+        public bool Confirm(string title, string message)
+        {
+            LastConfirmMessage = message;
+            return ConfirmResult;
+        }
     }
 
     internal sealed class FakeThemeService : IThemeService
@@ -501,6 +511,126 @@ namespace UniversalBackupTool.Tests
             viewModel.IncludeVortexAppData = false;
             await viewModel.StartBackupCommand.ExecuteAsync(null);
             Assert.That(_runner.RunCount, Is.EqualTo(1), "staging alone does not need Vortex closed");
+        }
+
+        [Test]
+        public async Task FullGame_ExistingArchive_IsConfirmedOnceWithItsPathAndSize()
+        {
+            var viewModel = await CreateBackupAsync("Skyrim");
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+            viewModel.IncludeFullGame = true;
+            _runner.ExistingFullGameArchives = [new ExistingFullGameArchive("Skyrim", @"G:\Drive\Skyrim.zip", 3L * 1024 * 1024 * 1024)];
+            _dialogs.ConfirmResult = false;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.RunCount, Is.Zero, "declined: nothing runs and nothing is deleted");
+                Assert.That(_dialogs.LastConfirmMessage, Does.Contain(@"G:\Drive\Skyrim.zip").And.Contain($"{3.0:0.0} GB"));
+            });
+
+            _dialogs.ConfirmResult = true;
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_runner.RunCount, Is.EqualTo(1));
+                Assert.That(_runner.LastOptions!.IncludeFullGame, Is.True);
+                Assert.That(viewModel.IncludeFullGame, Is.True, "the toggle stays on after a backup");
+            });
+        }
+
+        [Test]
+        public async Task FullGame_WithoutExistingArchive_AsksNothing()
+        {
+            var viewModel = await CreateBackupAsync("Skyrim");
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+            viewModel.IncludeFullGame = true;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_dialogs.LastConfirmMessage, Is.Null);
+                Assert.That(_runner.RunCount, Is.EqualTo(1));
+            });
+        }
+
+        [Test]
+        public async Task FullGame_DoesNotNeedTheBackupDestination_OtherComponentsDo()
+        {
+            await new JsonSettingsStore().SaveAsync(_paths.GetPaths().SettingsFilePath, AppSettings.Default(string.Empty));
+
+            var viewModel = await CreateBackupAsync("Skyrim");
+            viewModel.VortexTargets.ToggleSelectAllCommand.Execute(null);
+            viewModel.IncludeStaging = true;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.RunCount, Is.Zero, "staging needs the destination");
+
+            viewModel.IncludeStaging = false;
+            viewModel.IncludeFullGame = true;
+
+            await viewModel.StartBackupCommand.ExecuteAsync(null);
+            Assert.That(_runner.RunCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public async Task Dashboard_FullGameExportFolder_IsValidatedSavedAndKeptWhileOff()
+        {
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            viewModel.AddProfileCommand.Execute(null);
+            viewModel.EditGameName = "Skyrim";
+            viewModel.EditGameRootPath = @"D:\Games\Skyrim";
+            viewModel.EditUseFullGameExportPath = true;
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            Assert.That(viewModel.Profiles, Is.Empty, "the checkbox is on but no folder is chosen");
+
+            viewModel.EditFullGameExportPath = @"G:\Drive\Games";
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            var saved = viewModel.Profiles.Single();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(saved.FullGameExportFolder, Is.EqualTo(@"G:\Drive\Games"));
+                Assert.That(saved.HasFullGameExportFolder, Is.True);
+            });
+
+            viewModel.EditProfileCommand.Execute(saved);
+            Assert.That(viewModel.EditUseFullGameExportPath, Is.True);
+
+            viewModel.EditUseFullGameExportPath = false;
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            var profile = (await new JsonProfileStore().LoadAsync(_paths.GetPaths().ProfilesFilePath)).Single();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(profile.GetFullGameExportFolder(), Is.Null);
+                Assert.That(profile.FullGameExportPath, Is.EqualTo(@"G:\Drive\Games"), "turning it back on does not ask again");
+                Assert.That(viewModel.Profiles.Single().HasFullGameExportFolder, Is.False);
+            });
+        }
+
+        [Test]
+        public async Task Dashboard_FullGameExportFolder_NeedsTheGameFolder()
+        {
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            viewModel.AddProfileCommand.Execute(null);
+            viewModel.EditGameName = "Skyrim";
+            viewModel.EditVortexStagingPath = @"D:\Staging";
+            viewModel.EditUseFullGameExportPath = true;
+            viewModel.EditFullGameExportPath = @"G:\Drive";
+            await viewModel.SaveProfileCommand.ExecuteAsync(null);
+
+            Assert.That(viewModel.Profiles, Is.Empty);
         }
 
         [Test]

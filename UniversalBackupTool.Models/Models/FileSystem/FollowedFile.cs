@@ -11,5 +11,11 @@ namespace UniversalBackupTool.Model.Models.FileSystem
 
     /// <param name="Warnings">Links that were skipped (broken, loops), meant for the Output panel.</param>
     /// <param name="LinksFollowed">Number of file and directory links whose targets were included.</param>
-    public record FollowedScan(List<FollowedFile> Files, List<string> Warnings, int LinksFollowed);
+    public record FollowedScan(List<FollowedFile> Files, List<string> Warnings, int LinksFollowed)
+    {
+        /// <summary>
+        /// Folders below the root with nothing in them, relative to the root with '/' separators.
+        /// </summary>
+        public List<string> EmptyDirectories { get; init; } = [];
+    }
 }

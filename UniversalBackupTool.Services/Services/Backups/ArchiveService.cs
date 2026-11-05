@@ -17,7 +17,21 @@ namespace UniversalBackupTool.Service.Services.Backups
         private enum FileOutcome
         {
             Written,
+
+            /// <summary>
+            /// An empty folder entry: part of the archive, but not a file.
+            /// </summary>
+            Folder,
             Missing,
+
+            /// <summary>
+            /// The file could not be opened, so the archive has no entry for it yet.
+            /// </summary>
+            Locked,
+
+            /// <summary>
+            /// Reading stopped halfway, so the archive holds a partial entry that only Continue Backup can replace.
+            /// </summary>
             Failed
         }
 
@@ -85,11 +99,24 @@ namespace UniversalBackupTool.Service.Services.Backups
             await using var archiveStream = new FileStream(archivePath, fileMode, FileAccess.ReadWrite, FileShare.None, BufferSize, useAsync: true);
             using var zipArchive = new ZipArchive(archiveStream, mode, leaveOpen: true);
 
+            // A file locked now may be free once the rest is written. Trying again here costs nothing, while Continue
+            // Backup has to reopen the finished archive for update. Continue Backup itself does not need a second try.
+            var retryLocked = mode == ZipArchiveMode.Create;
+            var locked = new List<ArchiveFileItem>();
+
             foreach (var item in files)
+                await AddAsync(item, retryLocked);
+
+            foreach (var item in locked)
+                await AddAsync(item, false);
+
+            return new ArchiveWriteResult(written, failed) { FileHashes = hashes };
+
+            async Task AddAsync(ArchiveFileItem item, bool retryIfLocked)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var outcome = await TryAddFileAsync(zipArchive, item, settings, mode == ZipArchiveMode.Update, progress, cancellationToken);
+                var outcome = await TryAddFileAsync(zipArchive, item, settings, mode == ZipArchiveMode.Update, retryIfLocked, progress, cancellationToken);
 
                 if (outcome.Sha256 is not null)
                     hashes[item.SourcePath] = outcome.Sha256;
@@ -100,13 +127,16 @@ namespace UniversalBackupTool.Service.Services.Backups
                         written++;
                         break;
 
+                    case FileOutcome.Locked when retryIfLocked:
+                        locked.Add(item);
+                        break;
+
+                    case FileOutcome.Locked:
                     case FileOutcome.Failed:
                         failed.Add(item);
                         break;
                 }
             }
-
-            return new ArchiveWriteResult(written, failed) { FileHashes = hashes };
         }
 
         private async Task<FileWriteOutcome> TryAddFileAsync(
@@ -114,9 +144,21 @@ namespace UniversalBackupTool.Service.Services.Backups
             ArchiveFileItem item,
             AppSettings settings,
             bool replaceExisting,
+            bool retryIfLocked,
             IProgress<ArchiveProgress>? progress,
             CancellationToken cancellationToken)
         {
+            if (item.IsEmptyFolder)
+            {
+                if (replaceExisting)
+                    zipArchive.GetEntry(item.EntryName)?.Delete();
+
+                zipArchive.CreateEntry(item.EntryName);
+                progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
+
+                return new FileWriteOutcome(FileOutcome.Folder, null);
+            }
+
             FileStream input;
 
             try
@@ -132,9 +174,17 @@ namespace UniversalBackupTool.Service.Services.Backups
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                _log?.AppendDetail($"Skipped (in use or access denied, will be retried by Continue Backup): {item.SourcePath} - {exception.Message}");
-                progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
-                return new FileWriteOutcome(FileOutcome.Failed, null);
+                if (retryIfLocked)
+                {
+                    _log?.AppendDetail($"Locked (in use or access denied, trying again at the end of this archive): {item.SourcePath} - {exception.Message}");
+                }
+                else
+                {
+                    _log?.AppendDetail($"Skipped (in use or access denied, will be retried by Continue Backup): {item.SourcePath} - {exception.Message}");
+                    progress?.Report(new ArchiveProgress(item.SourcePath, 0, true));
+                }
+
+                return new FileWriteOutcome(FileOutcome.Locked, null);
             }
 
             var readFailed = false;

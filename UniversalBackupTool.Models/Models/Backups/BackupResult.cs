@@ -9,6 +9,11 @@ namespace UniversalBackupTool.Model.Models.Backups
     {
         public string? ManifestPath { get; init; }
 
+        /// <summary>
+        /// The archive of a full game backup; null for every other component.
+        /// </summary>
+        public string? FullGameArchivePath { get; init; }
+
         public int ModsArchived { get; init; }
 
         public int ModsReused { get; init; }

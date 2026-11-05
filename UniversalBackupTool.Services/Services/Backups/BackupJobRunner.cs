@@ -67,7 +67,7 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (!options.HasAnyComponent)
                 throw new ArgumentException("Select at least one component to back up.", nameof(options));
 
-            if (string.IsNullOrWhiteSpace(settings.GoogleDriveBackupPath))
+            if (options.UsesBackupDestination && string.IsNullOrWhiteSpace(settings.GoogleDriveBackupPath))
                 throw new InvalidOperationException("The backup destination folder is not configured. Set it on the Settings page.");
 
             var results = new List<BackupResult>();
@@ -89,10 +89,19 @@ namespace UniversalBackupTool.Service.Services.Backups
                 var skippedComponentWarnings = new List<string>();
                 var componentList = ExpandPerComponentOptions(options, profile);
 
+                // A full game backup that does not happen never stops the other games of the run.
+                var fullGameNotRun = false;
+
+                if (options.IncludeFullGame && !componentList.Any(component => component.IncludeFullGame))
+                {
+                    batchWarnings.Add($"\"{profile.GameName}\": no full game backup, because the profile has no export folder or no game folder. Set them on the Profiles page.");
+                    fullGameNotRun = true;
+                }
+
                 if (componentList.Count == 0)
                 {
                     // Only the shared Vortex AppData was selected: nothing to do per game.
-                    if (!(backupSharedAppData && profile.UsesVortex))
+                    if (!fullGameNotRun && !(backupSharedAppData && profile.UsesVortex))
                         batchWarnings.Add($"\"{profile.GameName}\" was skipped: it is not managed by Vortex, so the staging and Vortex AppData components do not apply to it.");
 
                     continue;
@@ -112,6 +121,17 @@ namespace UniversalBackupTool.Service.Services.Backups
                     {
                         skippedComponentWarnings.Add(exception.Message);
                     }
+                    catch (FullGameBackupStoppedException exception)
+                    {
+                        batchWarnings.Add(exception.Message);
+                        fullGameNotRun = true;
+                    }
+                }
+
+                if (profileResults.Count == 0 && fullGameNotRun)
+                {
+                    batchWarnings.AddRange(skippedComponentWarnings);
+                    continue;
                 }
 
                 if (profileResults.Count == 0)
@@ -217,6 +237,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             if (options.IncludeCustomFolders)
                 expanded.Add(new BackupOptions(false, false, false, true, options.Monolithic));
 
+            if (options.IncludeFullGame && profile.GetFullGameExportFolder() is not null && !string.IsNullOrWhiteSpace(profile.GameRootPath))
+                expanded.Add(new BackupOptions(false, false, false, false, IncludeFullGame: true));
+
             return expanded;
         }
 
@@ -239,6 +262,9 @@ namespace UniversalBackupTool.Service.Services.Backups
 
             if (options.IncludeCustomFolders)
                 return "Custom paths";
+
+            if (options.IncludeFullGame)
+                return "Full game";
 
             return "Unknown";
         }
@@ -346,6 +372,212 @@ namespace UniversalBackupTool.Service.Services.Backups
             return new BackupBatchResult([], remaining, archived);
         }
 
+        public IReadOnlyList<ExistingFullGameArchive> FindExistingFullGameArchives(IReadOnlyList<BackupProfile> profiles)
+        {
+            ArgumentNullException.ThrowIfNull(profiles);
+
+            var archives = new List<ExistingFullGameArchive>();
+
+            foreach (var profile in profiles)
+            {
+                if (profile.GetFullGameExportFolder() is not { } exportFolder || string.IsNullOrWhiteSpace(profile.GameRootPath))
+                    continue;
+
+                try
+                {
+                    var archive = new FileInfo(BackupLocations.GetFullGameArchivePath(exportFolder, profile));
+
+                    if (archive.Exists)
+                        archives.Add(new ExistingFullGameArchive(profile.GameName, archive.FullName, archive.Length));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    // An unusable export folder stops that game's backup later, before anything is deleted.
+                }
+            }
+
+            return archives;
+        }
+
+        /// <summary>
+        /// Writes the whole game folder as one zip into the profile's export folder. The old archive is deleted before the
+        /// new one is started, never overwritten: on a cloud drive, replacing a file makes the client download it first.
+        /// Everything that can be checked happens before that delete, so a wrong path, an empty folder or a locked file
+        /// leaves the old archive alone. Links are read through, so the archive holds a working game without any links.
+        /// </summary>
+        private async Task<BackupResult> BackupFullGameAsync(
+            BackupProfile profile,
+            AppSettings settings,
+            string progressLabel,
+            IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            var rootPath = profile.GameRootPath!;
+            var exportFolder = profile.GetFullGameExportFolder()!;
+
+            if (!Directory.Exists(rootPath))
+                throw new FullGameBackupStoppedException($"\"{profile.GameName}\": no full game backup, the game folder was not found: {rootPath}");
+
+            if (IsSameOrInside(exportFolder, rootPath))
+                throw new FullGameBackupStoppedException($"\"{profile.GameName}\": no full game backup, the export folder is inside the game folder, so the archive would end up in itself: {exportFolder}");
+
+            try
+            {
+                Directory.CreateDirectory(exportFolder);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                throw new FullGameBackupStoppedException($"\"{profile.GameName}\": no full game backup, the export folder cannot be used: {exportFolder} ({exception.Message})");
+            }
+
+            progress?.Report(new BackupProgress($"{progressLabel}: scanning files", null, 0, 0, 0, 0));
+
+            var warnings = new List<string>();
+            var filter = new CountingIgnoreFilter(_ignorePatternMatcher.Create(profile.UseIgnoreList ? settings.GlobalIgnorePatterns : []));
+            var scan = await Task.Run(() => _fileSystemProvider.ScanFollowingLinks(rootPath, cancellationToken), cancellationToken);
+
+            warnings.AddRange(scan.Warnings);
+
+            var realFiles = scan.Files
+                .Where(file => !filter.IsIgnored(file.RelativePath))
+                .Select(file => new ArchiveFileItem(file.FullPath, file.RelativePath))
+                .ToList();
+
+            if (realFiles.Count == 0)
+                throw new FullGameBackupStoppedException($"\"{profile.GameName}\": no full game backup, there are no files to archive in the game folder: {rootPath}");
+
+            // Without these entries an unpacked game would miss folders it may expect to exist.
+            var items = realFiles
+                .Concat(scan.EmptyDirectories
+                    .Where(directory => !filter.IsIgnored(directory))
+                    .Select(directory => new ArchiveFileItem(Path.Combine(rootPath, directory.Replace('/', Path.DirectorySeparatorChar)), directory + "/")))
+                .ToList();
+
+            var lockedFiles = await Task.Run(() => FindLockedFiles(realFiles, $"{progressLabel}: checking for locked files", progress, cancellationToken), cancellationToken);
+
+            if (lockedFiles.Count > 0)
+            {
+                throw new FullGameBackupStoppedException(
+                    $"\"{profile.GameName}\": no full game backup and the old archive was not touched: {lockedFiles.Count:N0} file(s) are in use or access is denied. Close the game and launchers and run it again. For example: {string.Join(", ", lockedFiles.Take(10))}");
+            }
+
+            var archivePath = BackupLocations.GetFullGameArchivePath(exportFolder, profile);
+
+            DeletePreviousFullGameArchive(archivePath, profile, progressLabel, progress);
+
+            var temporaryPath = archivePath + $".{Guid.NewGuid():N}.pending";
+            var unit = new UnitPlan(new BackupManifestUnit(BackupComponent.FullGame, Path.GetFileName(archivePath), string.Empty, rootPath, string.Empty), items);
+            var archiveSettings = ApplyComponentSizeRule(settings, [unit], profile, BackupComponent.FullGame, warnings);
+            var totalBytes = realFiles.Sum(file => GetLength(file.SourcePath));
+            var tracker = new ProgressTracker($"{progressLabel}: archiving", totalBytes, items.Count, progress);
+
+            try
+            {
+                var written = await _archiveService.CreateArchiveAsync(temporaryPath, items, archiveSettings, tracker, cancellationToken);
+                var failedFiles = written.Failed.Select(item => new FailedBackupFile(temporaryPath, item.EntryName, item.SourcePath)).ToList();
+                var pendingMoves = new List<PendingArchiveMove>();
+
+                tracker.Finish();
+
+                // Locked files keep the archive under its temporary name until Continue Backup has added them.
+                if (failedFiles.Count > 0)
+                    pendingMoves.Add(new PendingArchiveMove(temporaryPath, archivePath));
+                else
+                    File.Move(temporaryPath, archivePath);
+
+                return new BackupResult(profile.GameName, exportFolder, written.FilesWritten, warnings, failedFiles)
+                {
+                    FullGameArchivePath = archivePath,
+                    PendingArchiveMoves = pendingMoves,
+                    IgnoredFiles = filter.IgnoredCount,
+                    IgnoredExamples = filter.Examples.ToList()
+                };
+            }
+            catch (Exception exception)
+            {
+                TryDeleteFile(temporaryPath);
+
+                if (exception is not (IOException or UnauthorizedAccessException))
+                    throw;
+
+                // Not turned into a skipped game: when the disk is full, the next game would lose its old archive as well.
+                throw new IOException($"\"{profile.GameName}\": the full game backup failed and the old archive is already deleted, so this game has no archive now: {exception.Message}", exception);
+            }
+        }
+
+        /// <summary>
+        /// Files that cannot be opened the way archiving opens them. Opening does not read any data.
+        /// </summary>
+        private static List<string> FindLockedFiles(
+            IReadOnlyList<ArchiveFileItem> files,
+            string phase,
+            IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            var locked = new List<string>();
+
+            for (var index = 0; index < files.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (index % 500 == 0)
+                    progress?.Report(new BackupProgress(phase, null, 0, 0, index, files.Count));
+
+                try
+                {
+                    using var handle = File.OpenHandle(files[index].SourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                }
+                catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    // Gone since the scan; archiving reports it the same way.
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    locked.Add(files[index].SourcePath);
+                }
+            }
+
+            return locked;
+        }
+
+        /// <summary>
+        /// Deletes the old archive and the temporary files of runs that never finished. If the old archive cannot be
+        /// deleted the game is skipped, because writing over it is exactly what must not happen.
+        /// </summary>
+        private static void DeletePreviousFullGameArchive(string archivePath, BackupProfile profile, string progressLabel, IProgress<BackupProgress>? progress)
+        {
+            try
+            {
+                if (File.Exists(archivePath))
+                {
+                    File.Delete(archivePath);
+                    progress?.Report(new BackupProgress($"{progressLabel}: deleted the old archive", archivePath, 0, 0, 0, 0));
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new FullGameBackupStoppedException($"\"{profile.GameName}\": no full game backup, the old archive could not be deleted: {archivePath} ({exception.Message})");
+            }
+
+            foreach (var leftover in Directory.EnumerateFiles(Path.GetDirectoryName(archivePath)!, Path.GetFileName(archivePath) + ".*.pending").ToList())
+                TryDeleteFile(leftover);
+        }
+
+        private static bool IsSameOrInside(string path, string folder)
+        {
+            try
+            {
+                var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) + Path.DirectorySeparatorChar;
+                var fullFolder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
+
+                return fullPath.StartsWith(fullFolder, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return false;
+            }
+        }
+
         private Task<BackupResult> BackupProfileAsync(
             BackupProfile profile,
             BackupOptions options,
@@ -354,6 +586,9 @@ namespace UniversalBackupTool.Service.Services.Backups
             IProgress<BackupProgress>? progress,
             CancellationToken cancellationToken)
         {
+            if (options.IncludeFullGame)
+                return BackupFullGameAsync(profile, settings, progressLabel, progress, cancellationToken);
+
             return options.Monolithic
                 ? BackupLegacyProfileAsync(profile, options, settings, progressLabel, progress, cancellationToken)
                 : BackupIncrementalProfileAsync(profile, options, settings, progressLabel, progress, cancellationToken);
@@ -1614,6 +1849,11 @@ namespace UniversalBackupTool.Service.Services.Backups
         }
 
         private sealed record SourceFile(string FullPath, string RelativePath);
+
+        /// <summary>
+        /// A full game backup did not start for one game. Its old archive is untouched and the run goes on with the next.
+        /// </summary>
+        private sealed class FullGameBackupStoppedException(string message) : Exception(message);
 
         /// <summary>
         /// Prefixes progress phases of nested work (such as the snapshot content check) with the profile and component.
