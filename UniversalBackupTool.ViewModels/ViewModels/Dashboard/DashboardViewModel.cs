@@ -148,6 +148,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
                     ReplaceProfiles(profiles);
                 });
 
+        /// <summary>
+        /// Raised when the profile editor is opened (add or edit), so the view can scroll it into sight.
+        /// </summary>
+        public event EventHandler? EditorOpened;
+
         [RelayCommand]
         private void AddProfile()
         {
@@ -166,6 +171,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             IsFindVisible = false;
             IsEditing = true;
             OnPropertyChanged(nameof(EditorTitle));
+            EditorOpened?.Invoke(this, EventArgs.Empty);
         }
 
         [RelayCommand]
@@ -191,6 +197,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             IsFindVisible = false;
             IsEditing = true;
             OnPropertyChanged(nameof(EditorTitle));
+            EditorOpened?.Invoke(this, EventArgs.Empty);
         }
 
         [RelayCommand]

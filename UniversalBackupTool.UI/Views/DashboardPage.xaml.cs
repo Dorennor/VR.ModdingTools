@@ -18,6 +18,9 @@ namespace UniversalBackupTool.UI.Views
             InitializeComponent();
 
             Loaded += OnLoaded;
+
+            // The editor sits at the top of the page while the Edit buttons are on the profile cards further down.
+            _viewModel.EditorOpened += (_, _) => PageScrollViewer.ScrollToTop();
         }
 
         private async void OnLoaded(object sender, RoutedEventArgs e)

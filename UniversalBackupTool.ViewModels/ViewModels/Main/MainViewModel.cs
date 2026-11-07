@@ -173,6 +173,10 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Main
                 return false;
             }
 
+            // The operation may have finished while the confirmation dialog was open.
+            if (!Coordinator.IsOperationRunning)
+                return true;
+
             _closeRequested = true;
             ReportWarning($"Exit requested: waiting for \"{operationName}\" to stop.");
             Coordinator.CancelCurrent();
