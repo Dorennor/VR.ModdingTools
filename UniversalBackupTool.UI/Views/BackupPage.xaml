@@ -186,7 +186,8 @@
                                         helpers:NestedScrollBehavior.PassWheelAtEdges="True"
                                         HorizontalScrollBarVisibility="Disabled"
                                         VerticalScrollBarVisibility="Auto">
-                                        <StackPanel>
+                                        <!--  The scrollbar is drawn over the content: the right margin keeps it off the Select all buttons.  -->
+                                        <StackPanel Margin="0,0,20,0">
                                             <ContentControl Content="{Binding VortexTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
                                             <ContentControl Content="{Binding OtherTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
                                         </StackPanel>
