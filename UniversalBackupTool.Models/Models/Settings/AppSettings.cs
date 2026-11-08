@@ -22,6 +22,11 @@ namespace UniversalBackupTool.Model.Models.Settings
         /// </summary>
         public bool ShowOnlyInstalledGames { get; init; }
 
+        /// <summary>
+        /// The Profiles page shows each profile as a single row, without its paths; the switch is on that page. Off by default.
+        /// </summary>
+        public bool CompactProfilesView { get; init; }
+
         public string SafetyBackupPath { get; init; } = string.IsNullOrWhiteSpace(SafetyBackupPath)
             ? Path.Combine(AppContext.BaseDirectory, "SafetyBackups")
             : SafetyBackupPath;

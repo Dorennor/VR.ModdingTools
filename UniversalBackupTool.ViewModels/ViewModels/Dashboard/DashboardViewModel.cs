@@ -7,6 +7,7 @@ using UniversalBackupTool.Interface.Interfaces.Dialogs;
 using UniversalBackupTool.Interface.Interfaces.Operations;
 using UniversalBackupTool.Interface.Interfaces.Paths;
 using UniversalBackupTool.Interface.Interfaces.Profiles;
+using UniversalBackupTool.Interface.Interfaces.Settings;
 using UniversalBackupTool.Interfaces.Storage;
 using UniversalBackupTool.Model.Models.Backups;
 using UniversalBackupTool.Model.Models.Profiles;
@@ -17,6 +18,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
     public sealed partial class DashboardViewModel : BasicViewModel
     {
         private readonly IProfileStore _profileStore;
+        private readonly ISettingsStore _settingsStore;
         private readonly IPathDriveService _pathDriveService;
         private readonly ISystemPathsProvider _systemPathsProvider;
         private readonly IAppStoragePathsProvider _storagePathsProvider;
@@ -25,9 +27,11 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
 
         private Guid? _editingProfileId;
         private BackupProfile? _editingOriginal;
+        private bool _isApplyingSettings;
 
         public DashboardViewModel(
             IProfileStore profileStore,
+            ISettingsStore settingsStore,
             IPathDriveService pathDriveService,
             ISystemPathsProvider systemPathsProvider,
             IAppStoragePathsProvider storagePathsProvider,
@@ -38,6 +42,7 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
             : base(operationOutputService, operationCoordinator)
         {
             _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
+            _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
             _pathDriveService = pathDriveService ?? throw new ArgumentNullException(nameof(pathDriveService));
             _systemPathsProvider = systemPathsProvider ?? throw new ArgumentNullException(nameof(systemPathsProvider));
             _storagePathsProvider = storagePathsProvider ?? throw new ArgumentNullException(nameof(storagePathsProvider));
@@ -60,6 +65,68 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         public IReadOnlyList<string> AvailableDrives { get; }
 
         public bool HasNoProfiles => Profiles.Count == 0;
+
+        /// <summary>
+        /// Shows each profile as a single row with its name and buttons, so a long list stays easy to scan.
+        /// </summary>
+        [ObservableProperty]
+        private bool _isCompactView;
+
+        /// <summary>
+        /// The running or last save of <see cref="IsCompactView"/>; lets a caller wait for it.
+        /// </summary>
+        public Task CompactViewSave { get; private set; } = Task.CompletedTask;
+
+        partial void OnIsCompactViewChanged(bool value)
+        {
+            if (!_isApplyingSettings)
+                CompactViewSave = SaveCompactViewAsync(CompactViewSave, value);
+        }
+
+        /// <summary>
+        /// Waits for the previous save, so quick clicks cannot collide on the file and the last click wins. Starts from the
+        /// stored file so nothing else in it is overwritten.
+        /// </summary>
+        private async Task SaveCompactViewAsync(Task previousSave, bool value)
+        {
+            await previousSave;
+
+            try
+            {
+                var path = _storagePathsProvider.GetPaths().SettingsFilePath;
+                var settings = await _settingsStore.LoadAsync(path) with { CompactProfilesView = value };
+
+                await _settingsStore.SaveAsync(path, settings);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                ReportWarning($"The \"Compact view\" choice could not be saved: {exception.Message}");
+            }
+        }
+
+        /// <summary>
+        /// A settings file that cannot be read only costs the remembered view; the profiles below still load.
+        /// </summary>
+        private async Task LoadCompactViewAsync()
+        {
+            await CompactViewSave;
+
+            try
+            {
+                var settings = await _settingsStore.LoadAsync(_storagePathsProvider.GetPaths().SettingsFilePath);
+
+                _isApplyingSettings = true;
+                IsCompactView = settings.CompactProfilesView;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                ReportWarning($"The \"Compact view\" choice could not be read: {exception.Message}");
+            }
+            finally
+            {
+                _isApplyingSettings = false;
+            }
+        }
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(EditorTitle))]
@@ -143,6 +210,8 @@ namespace UniversalBackupTool.ViewModel.ViewModels.Dashboard
         [RelayCommand]
         private Task LoadAsync() => RunBusyAsync(async () =>
                 {
+                    await LoadCompactViewAsync();
+
                     var profiles = await _profileStore.LoadAsync(ProfilesFilePath);
 
                     ReplaceProfiles(profiles);

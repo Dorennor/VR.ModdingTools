@@ -38,7 +38,17 @@
                         Grid.Column="1"
                         VerticalAlignment="Center"
                         Orientation="Horizontal">
+                        <ToggleButton IsChecked="{Binding IsCompactView, Mode=TwoWay}" ToolTip="Show only the game names, without their paths">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon
+                                    Margin="0,0,8,0"
+                                    FontSize="16"
+                                    Symbol="RowTriple24" />
+                                <TextBlock Text="Compact view" />
+                            </StackPanel>
+                        </ToggleButton>
                         <ui:Button
+                            Margin="8,0,0,0"
                             Command="{Binding ToggleFindCommand}"
                             Content="Find on other disk"
                             Icon="{ui:SymbolIcon Search24}" />
@@ -382,7 +392,8 @@
                                     <Border
                                         Padding="58,10,16,14"
                                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="0,1,0,0">
+                                        BorderThickness="0,1,0,0"
+                                        Visibility="{Binding DataContext.IsCompactView, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}">
                                         <StackPanel>
                                             <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexStagingPath, Converter={StaticResource BoolToVisibility}}">
                                                 <Grid.ColumnDefinitions>

@@ -872,6 +872,7 @@ namespace UniversalBackupTool.Tests
 
         private DashboardViewModel CreateDashboard() => new(
             new JsonProfileStore(),
+            new JsonSettingsStore(),
             new PathDriveService(new FakeDrives()),
             new FakeDrives(),
             _paths,
@@ -879,6 +880,68 @@ namespace UniversalBackupTool.Tests
             _dialogs,
             _coordinator,
             _output);
+
+        [Test]
+        public async Task Dashboard_CompactView_IsOffByDefault_AndIsRememberedWithTheOtherSettings()
+        {
+            var store = new JsonSettingsStore();
+            var settingsPath = _paths.GetPaths().SettingsFilePath;
+            await store.SaveAsync(settingsPath, AppSettings.Default(Path.Combine(_root, "Backups")) with { MaxPreservedBackupsPerGame = 7 });
+
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            Assert.That(viewModel.IsCompactView, Is.False);
+
+            viewModel.IsCompactView = true;
+            await viewModel.CompactViewSave;
+
+            var reloaded = CreateDashboard();
+            await reloaded.LoadCommand.ExecuteAsync(null);
+            var saved = await store.LoadAsync(settingsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(reloaded.IsCompactView, Is.True);
+                Assert.That(saved.MaxPreservedBackupsPerGame, Is.EqualTo(7));
+            });
+        }
+
+        [Test]
+        public async Task Dashboard_CompactView_LastOfQuickClicksIsSaved()
+        {
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+            var entriesBefore = _output.Entries.Count;
+
+            viewModel.IsCompactView = true;
+            viewModel.IsCompactView = false;
+            viewModel.IsCompactView = true;
+            await viewModel.CompactViewSave;
+
+            var saved = await new JsonSettingsStore().LoadAsync(_paths.GetPaths().SettingsFilePath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(saved.CompactProfilesView, Is.True);
+                Assert.That(_output.Entries, Has.Count.EqualTo(entriesBefore), "no save collides with another");
+            });
+        }
+
+        [Test]
+        public async Task Dashboard_CompactView_UnreadableSettingsStillLoadProfiles()
+        {
+            await SaveProfilesAsync("Skyrim");
+            await File.WriteAllTextAsync(_paths.GetPaths().SettingsFilePath, "{ not json");
+
+            var viewModel = CreateDashboard();
+            await viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(viewModel.Profiles, Has.Count.EqualTo(1));
+                Assert.That(viewModel.IsCompactView, Is.False);
+            });
+        }
 
         [Test]
         public async Task Dashboard_CustomPaths_AddRemoveAndSave()
