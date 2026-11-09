@@ -10,8 +10,8 @@
     Title="{Binding ApplicationTitle}"
     Width="1240"
     Height="860"
-    MinWidth="900"
-    MinHeight="600"
+    MinWidth="640"
+    MinHeight="480"
     ExtendsContentIntoTitleBar="True"
     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
     Icon="pack://application:,,,/Assets/AppIcon.ico"
@@ -47,29 +47,44 @@
             OpenPaneLength="260"
             PaneDisplayMode="Left">
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Profiles" TargetPageType="{x:Type views:DashboardPage}">
+                <ui:NavigationViewItem
+                    Content="Profiles"
+                    TargetPageType="{x:Type views:DashboardPage}"
+                    ToolTip="Profiles">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Games24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Vanilla &amp; Purge" TargetPageType="{x:Type views:VanillaPurgePage}">
+                <ui:NavigationViewItem
+                    Content="Vanilla &amp; Purge"
+                    TargetPageType="{x:Type views:VanillaPurgePage}"
+                    ToolTip="Vanilla &amp; Purge">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Broom24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Backup" TargetPageType="{x:Type views:BackupPage}">
+                <ui:NavigationViewItem
+                    Content="Backup"
+                    TargetPageType="{x:Type views:BackupPage}"
+                    ToolTip="Backup">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Archive24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Restore" TargetPageType="{x:Type views:RestorePage}">
+                <ui:NavigationViewItem
+                    Content="Restore"
+                    TargetPageType="{x:Type views:RestorePage}"
+                    ToolTip="Restore">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="History24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem Content="Settings" TargetPageType="{x:Type views:SettingsPage}">
+                <ui:NavigationViewItem
+                    Content="Settings"
+                    TargetPageType="{x:Type views:SettingsPage}"
+                    ToolTip="Settings">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Settings24" />
                     </ui:NavigationViewItem.Icon>

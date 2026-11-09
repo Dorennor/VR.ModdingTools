@@ -25,7 +25,11 @@ namespace UniversalBackupTool.UI
 
             RootNavigation.SetPageProviderService(pageProvider);
 
+            FitInitialSizeToScreen();
+
             Loaded += OnLoaded;
+            SizeChanged += (_, e) => UpdateNavigationPane(e.NewSize.Width);
+            RootNavigation.SizeChanged += (_, _) => ApplyOutputHeight();
             Closing += OnClosing;
             _viewModel.CloseRequested += (_, _) => Dispatcher.BeginInvoke(Close);
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -67,10 +71,43 @@ namespace UniversalBackupTool.UI
             return null;
         }
 
+        /// <summary>The XAML size is the preferred one; a small or heavily scaled display must still show the whole window.</summary>
+        private void FitInitialSizeToScreen()
+        {
+            var workArea = SystemParameters.WorkArea;
+
+            Width = Math.Min(Width, workArea.Width * MaxInitialScreenShare);
+            Height = Math.Min(Height, workArea.Height * MaxInitialScreenShare);
+        }
+
+        /// <summary>Below this width the navigation pane shrinks to icons, whose names are then shown as tooltips.</summary>
+        private void UpdateNavigationPane(double windowWidth)
+        {
+            var isOpen = windowWidth >= MinWidthForOpenPane;
+
+            RootNavigation.IsPaneOpen = isOpen;
+
+            foreach (var item in RootNavigation.MenuItems.Cast<object>().Concat(RootNavigation.FooterMenuItems.Cast<object>()).OfType<DependencyObject>())
+                System.Windows.Controls.ToolTipService.SetIsEnabled(item, !isOpen);
+        }
+
+        private const double MaxInitialScreenShare = 0.95;
+        private const double MinWidthForOpenPane = 1100;
         private const double MinOutputHeight = 90;
         private const double MinPageHeight = 220;
 
+        /// <summary>Output resize grip and status bar, which stay around the Output panel.</summary>
+        private const double BottomDockChromeHeight = 34;
+
+        /// <summary>The height the user chose; the panel is shown smaller while the window is too short for it.</summary>
         private double _outputHeight = 170;
+
+        private double MaxOutputHeight => Math.Max(MinOutputHeight, RootNavigation.ActualHeight - MinPageHeight - BottomDockChromeHeight);
+
+        private void ApplyOutputHeight()
+        {
+            OutputPanel.Height = Math.Min(_outputHeight, MaxOutputHeight);
+        }
 
         private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -87,15 +124,13 @@ namespace UniversalBackupTool.UI
 
             OutputPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
             OutputResizeGrip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-            OutputPanel.Height = _outputHeight;
+            ApplyOutputHeight();
         }
 
         private void OnOutputResizeGripDragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
         {
-            var maxHeight = Math.Max(MinOutputHeight, RootNavigation.ActualHeight - MinPageHeight);
-
-            _outputHeight = Math.Clamp(_outputHeight - e.VerticalChange, MinOutputHeight, maxHeight);
-            OutputPanel.Height = _outputHeight;
+            _outputHeight = Math.Clamp(OutputPanel.Height - e.VerticalChange, MinOutputHeight, MaxOutputHeight);
+            ApplyOutputHeight();
         }
 
         private async void OnLoaded(object sender, RoutedEventArgs e)

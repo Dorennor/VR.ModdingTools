@@ -13,211 +13,207 @@
     Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="1072" />
-            </Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource PageContentPanelStyle}">
+            <Grid Style="{StaticResource PageHeaderGridStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Backup" />
+                    <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Create incremental snapshots of your games." />
+                </StackPanel>
+            </Grid>
 
-            <StackPanel Style="{StaticResource PageContentPanelStyle}">
-                <Grid Style="{StaticResource PageHeaderGridStyle}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Backup" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Create incremental snapshots of your games." />
-                    </StackPanel>
-                </Grid>
+            <!--  Paused job notice, styled like a Windows 11 warning InfoBar.  -->
+            <controls:SettingsCard
+                Margin="0,20,0,0"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                Description="{Binding PausedJobMessage}"
+                Header="A backup needs to continue"
+                Visibility="{Binding HasPausedJob, Converter={StaticResource BoolToVisibility}}">
+                <controls:SettingsCard.Icon>
+                    <ui:SymbolIcon Foreground="{DynamicResource SystemFillColorCautionBrush}" Symbol="Warning24" />
+                </controls:SettingsCard.Icon>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button
+                        Appearance="Primary"
+                        Command="{Binding ResumeCommand}"
+                        Content="Continue backup"
+                        IsEnabled="{Binding CanStartOperation}" />
+                    <ui:Button
+                        Margin="8,0,0,0"
+                        Command="{Binding DiscardPausedJobCommand}"
+                        Content="Discard"
+                        IsEnabled="{Binding CanStartOperation}" />
+                </StackPanel>
+            </controls:SettingsCard>
 
-                <!--  Paused job notice, styled like a Windows 11 warning InfoBar.  -->
-                <controls:SettingsCard
-                    Margin="0,20,0,0"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    Description="{Binding PausedJobMessage}"
-                    Header="A backup needs to continue"
-                    Visibility="{Binding HasPausedJob, Converter={StaticResource BoolToVisibility}}">
-                    <controls:SettingsCard.Icon>
-                        <ui:SymbolIcon Foreground="{DynamicResource SystemFillColorCautionBrush}" Symbol="Warning24" />
-                    </controls:SettingsCard.Icon>
-                    <StackPanel Orientation="Horizontal">
-                        <ui:Button
-                            Appearance="Primary"
-                            Command="{Binding ResumeCommand}"
-                            Content="Continue backup"
-                            IsEnabled="{Binding CanStartOperation}" />
-                        <ui:Button
-                            Margin="8,0,0,0"
-                            Command="{Binding DiscardPausedJobCommand}"
-                            Content="Discard"
-                            IsEnabled="{Binding CanStartOperation}" />
-                    </StackPanel>
-                </controls:SettingsCard>
+            <!--  Create backup  -->
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Create backup" />
 
-                <!--  Create backup  -->
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Create backup" />
+            <!--
+                Profile picker sized for many games: search, select all / clear, live "N of M selected",
+                and a bounded multi-column grid that scrolls (wheel passes to the page at the edges).
+            -->
+            <Border
+                Margin="0,0,0,4"
+                Padding="16,12"
+                Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <Grid MinHeight="42">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon
+                            Margin="2,0,20,0"
+                            VerticalAlignment="Center"
+                            FontSize="20"
+                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                            Symbol="Games24" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource BodyTextStyle}" Text="Profiles" />
+                            <TextBlock
+                                Margin="0,2,0,0"
+                                Style="{StaticResource CaptionTextStyle}"
+                                Text="{Binding SelectedTargetsSummary}" />
+                        </StackPanel>
+                        <StackPanel
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal">
+                            <ui:Button
+                                Command="{Binding ClearTargetSelectionCommand}"
+                                Content="Clear"
+                                ToolTip="Deselect every game in both groups" />
+                        </StackPanel>
+                    </Grid>
 
-                <!--
-                    Profile picker sized for many games: search, select all / clear, live "N of M selected",
-                    and a bounded three-column grid that scrolls (wheel passes to the page at the edges).
-                -->
-                <Border
-                    Margin="0,0,0,4"
-                    Padding="16,12"
-                    Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <Grid MinHeight="42">
+                    <StackPanel Margin="42,12,0,0" Visibility="{Binding HasNoProfiles, Converter={StaticResource InverseBoolToVisibility}}">
+                        <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon
-                                Margin="2,0,20,0"
+                            <ui:TextBox
+                                Icon="{ui:SymbolIcon Search24}"
+                                PlaceholderText="Search games"
+                                Text="{Binding TargetFilter, UpdateSourceTrigger=PropertyChanged}" />
+                            <ui:ToggleSwitch
+                                Grid.Column="1"
+                                Margin="16,0,0,0"
                                 VerticalAlignment="Center"
-                                FontSize="20"
-                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                Symbol="Games24" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Style="{StaticResource BodyTextStyle}" Text="Profiles" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    Style="{StaticResource CaptionTextStyle}"
-                                    Text="{Binding SelectedTargetsSummary}" />
-                            </StackPanel>
-                            <StackPanel
-                                Grid.Column="2"
-                                VerticalAlignment="Center"
-                                Orientation="Horizontal">
-                                <ui:Button
-                                    Command="{Binding ClearTargetSelectionCommand}"
-                                    Content="Clear"
-                                    ToolTip="Deselect every game in both groups" />
-                            </StackPanel>
+                                Content="Hide uninstalled games"
+                                IsChecked="{Binding HideUninstalledGames, Mode=TwoWay}"
+                                ToolTip="Hides games that are not installed and have no mods in their staging folder" />
                         </Grid>
 
-                        <StackPanel Margin="42,12,0,0" Visibility="{Binding HasNoProfiles, Converter={StaticResource InverseBoolToVisibility}}">
+                        <Border
+                            Margin="0,8,0,0"
+                            Padding="8,6"
+                            Background="{DynamicResource ControlFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource ControlCornerRadius}">
                             <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ui:TextBox
-                                    Icon="{ui:SymbolIcon Search24}"
-                                    PlaceholderText="Search games"
-                                    Text="{Binding TargetFilter, UpdateSourceTrigger=PropertyChanged}" />
-                                <ui:ToggleSwitch
-                                    Grid.Column="1"
-                                    Margin="16,0,0,0"
-                                    VerticalAlignment="Center"
-                                    Content="Hide uninstalled games"
-                                    IsChecked="{Binding HideUninstalledGames, Mode=TwoWay}"
-                                    ToolTip="Hides games that are not installed and have no mods in their staging folder" />
-                            </Grid>
-
-                            <Border
-                                Margin="0,8,0,0"
-                                Padding="8,6"
-                                Background="{DynamicResource ControlFillColorDefaultBrush}"
-                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="{DynamicResource ControlCornerRadius}">
-                                <Grid>
-                                    <Grid.Resources>
-                                        <!--
-                                            One group of games (managed by Vortex / other games): a header with the group's
-                                            count and its own Select all, then the games in three columns. While games of the
-                                            other group are selected the group is locked (dimmed, checkboxes disabled).
-                                        -->
-                                        <DataTemplate x:Key="TargetSectionTemplate">
-                                            <StackPanel Margin="0,2,0,6" Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid Margin="4,2,0,4">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                                                        <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding Title}" />
-                                                        <TextBlock
-                                                            Margin="12,0,0,0"
-                                                            VerticalAlignment="Center"
-                                                            Style="{StaticResource CaptionTextStyle}"
-                                                            Text="{Binding Summary}" />
-                                                    </StackPanel>
-                                                    <ui:Button
-                                                        Grid.Column="1"
-                                                        Command="{Binding ToggleSelectAllCommand}"
-                                                        Content="{Binding SelectAllButtonText}"
-                                                        ToolTip="Select or deselect every game of this group (only the matching ones while searching)" />
-                                                </Grid>
-                                                <ItemsControl ItemsSource="{Binding VisibleTargets}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <UniformGrid VerticalAlignment="Top" Columns="3" />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <CheckBox
-                                                                Margin="4,2"
-                                                                IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                                IsEnabled="{Binding IsSelectable}"
-                                                                ToolTip="{Binding DisplayName}">
-                                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis">
-                                                                    <TextBlock.Style>
-                                                                        <Style TargetType="TextBlock">
-                                                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                                                                            <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
-                                                                                </DataTrigger>
-                                                                                <DataTrigger Binding="{Binding IsSelectable}" Value="False">
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
-                                                                                </DataTrigger>
-                                                                            </Style.Triggers>
-                                                                        </Style>
-                                                                    </TextBlock.Style>
-                                                                </TextBlock>
-                                                            </CheckBox>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </Grid.Resources>
-                                    <ScrollViewer
-                                        MaxHeight="320"
-                                        helpers:NestedScrollBehavior.PassWheelAtEdges="True"
-                                        HorizontalScrollBarVisibility="Disabled"
-                                        VerticalScrollBarVisibility="Auto">
-                                        <!--  The scrollbar is drawn over the content: the right margin keeps it off the Select all buttons.  -->
-                                        <StackPanel Margin="0,0,20,0">
-                                            <ContentControl Content="{Binding VortexTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
-                                            <ContentControl Content="{Binding OtherTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
+                                <Grid.Resources>
+                                    <!--
+                                        One group of games (managed by Vortex / other games): a header with the group's
+                                        count and its own Select all, then the games in as many columns as fit. While games of the
+                                        other group are selected the group is locked (dimmed, checkboxes disabled).
+                                    -->
+                                    <DataTemplate x:Key="TargetSectionTemplate">
+                                        <StackPanel Margin="0,2,0,6" Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid Margin="4,2,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding Title}" />
+                                                    <TextBlock
+                                                        Margin="12,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CaptionTextStyle}"
+                                                        Text="{Binding Summary}" />
+                                                </StackPanel>
+                                                <ui:Button
+                                                    Grid.Column="1"
+                                                    Command="{Binding ToggleSelectAllCommand}"
+                                                    Content="{Binding SelectAllButtonText}"
+                                                    ToolTip="Select or deselect every game of this group (only the matching ones while searching)" />
+                                            </Grid>
+                                            <ItemsControl ItemsSource="{Binding VisibleTargets}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <controls:AdaptiveColumnsPanel ColumnSpacing="0" MaxColumns="8" MinColumnWidth="200" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox
+                                                            Margin="4,2"
+                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                            IsEnabled="{Binding IsSelectable}"
+                                                            ToolTip="{Binding DisplayName}">
+                                                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding IsSelectable}" Value="False">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </CheckBox>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </StackPanel>
-                                    </ScrollViewer>
-                                    <TextBlock
-                                        Margin="4,6"
-                                        Style="{StaticResource CaptionTextStyle}"
-                                        Text="{Binding NoVisibleTargetsText}"
-                                        TextWrapping="Wrap"
-                                        Visibility="{Binding HasNoVisibleTargets, Converter={StaticResource BoolToVisibility}}" />
-                                </Grid>
-                            </Border>
+                                    </DataTemplate>
+                                </Grid.Resources>
+                                <ScrollViewer
+                                    MaxHeight="{Binding Path=(helpers:AdaptiveLayout.ListMaxHeight), RelativeSource={RelativeSource Self}}"
+                                    helpers:NestedScrollBehavior.PassWheelAtEdges="True"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    VerticalScrollBarVisibility="Auto">
+                                    <!--  The scrollbar is drawn over the content: the right margin keeps it off the Select all buttons.  -->
+                                    <StackPanel Margin="0,0,20,0">
+                                        <ContentControl Content="{Binding VortexTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
+                                        <ContentControl Content="{Binding OtherTargets}" ContentTemplate="{StaticResource TargetSectionTemplate}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                                <TextBlock
+                                    Margin="4,6"
+                                    Style="{StaticResource CaptionTextStyle}"
+                                    Text="{Binding NoVisibleTargetsText}"
+                                    TextWrapping="Wrap"
+                                    Visibility="{Binding HasNoVisibleTargets, Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
+                        </Border>
 
-                            <TextBlock
-                                Margin="0,8,0,0"
-                                Style="{StaticResource CaptionTextStyle}"
-                                Text="{Binding HiddenGamesSummary}"
-                                TextWrapping="Wrap"
-                                Visibility="{Binding HasHiddenGamesSummary, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock
+                            Margin="0,8,0,0"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="{Binding HiddenGamesSummary}"
+                            TextWrapping="Wrap"
+                            Visibility="{Binding HasHiddenGamesSummary, Converter={StaticResource BoolToVisibility}}" />
 
-                            <TextBlock
-                                Margin="0,8,0,0"
-                                Style="{StaticResource CaptionTextStyle}"
-                                Text="{Binding LockedComponentsSummary}"
-                                TextWrapping="Wrap"
-                                Visibility="{Binding HasLockedComponents, Converter={StaticResource BoolToVisibility}}" />
-                        </StackPanel>
+                        <TextBlock
+                            Margin="0,8,0,0"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="{Binding LockedComponentsSummary}"
+                            TextWrapping="Wrap"
+                            Visibility="{Binding HasLockedComponents, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
-                </Border>
+                </StackPanel>
+            </Border>
 
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="One archive per mod. Unchanged mods reuse their previous archive, so only updated mods are packed again. Only for games managed by Vortex."
                     Header="Staging folders"
@@ -295,16 +291,16 @@
                         OffContent="Off"
                         OnContent="On" />
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <StackPanel Style="{StaticResource ActionBarPanelStyle}">
-                    <ui:Button
-                        Appearance="Primary"
-                        Command="{Binding StartBackupCommand}"
-                        Content="Start backup"
-                        Icon="{ui:SymbolIcon ArrowUpload24}"
-                        IsEnabled="{Binding CanStartOperation}" />
-                </StackPanel>
+            <StackPanel Style="{StaticResource ActionBarPanelStyle}">
+                <ui:Button
+                    Appearance="Primary"
+                    Command="{Binding StartBackupCommand}"
+                    Content="Start backup"
+                    Icon="{ui:SymbolIcon ArrowUpload24}"
+                    IsEnabled="{Binding CanStartOperation}" />
             </StackPanel>
-        </Grid>
+        </StackPanel>
     </ScrollViewer>
 </Page>

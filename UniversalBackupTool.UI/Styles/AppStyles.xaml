@@ -21,19 +21,43 @@
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
+        <Setter Property="helpers:AdaptiveLayout.TrackPageSize" Value="True" />
     </Style>
 
     <!--
-        Page content column. Pages place it in a Grid whose only column is Width="*" MaxWidth="1072": the content then
-        stretches up to that width and stays left aligned, like Windows 11 Settings.
+        Page content: fills the page and, past MaxWidth (ultrawide screens), stays centred. Stretch with MaxWidth centres
+        the element. Groups of cards use controls:AdaptiveColumnsPanel to put the extra width of a large window to use.
     -->
     <Style x:Key="PageContentPanelStyle" TargetType="StackPanel">
         <Setter Property="Margin" Value="36,24,36,36" />
+        <Setter Property="MaxWidth" Value="1760" />
+        <Style.Triggers>
+            <Trigger Property="helpers:AdaptiveLayout.IsNarrow" Value="True">
+                <Setter Property="Margin" Value="20,16,20,24" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!--  Page header: title and description on the left, page commands on the right.  -->
     <Style x:Key="PageHeaderGridStyle" TargetType="Grid">
         <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <!--  Page commands: next to the title, or below it on a narrow page. Set the grid position here, not on the element.  -->
+    <Style x:Key="PageHeaderCommandsStyle" TargetType="StackPanel">
+        <Setter Property="Grid.Column" Value="1" />
+        <Setter Property="Grid.Row" Value="0" />
+        <Setter Property="Margin" Value="16,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Orientation" Value="Horizontal" />
+        <Style.Triggers>
+            <Trigger Property="helpers:AdaptiveLayout.IsNarrow" Value="True">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Margin" Value="0,12,0,0" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!--  Type ramp (Windows 11): Title 28, Subtitle 20, Body 14, Caption 12  -->
@@ -133,7 +157,8 @@
                         BorderBrush="{TemplateBinding BorderBrush}"
                         BorderThickness="{TemplateBinding BorderThickness}"
                         CornerRadius="{DynamicResource ControlCornerRadius}">
-                        <Grid>
+                        <!--  Centred: a card can be taller than its content when it shares a row with a taller card.  -->
+                        <Grid x:Name="CardLayout" VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -196,8 +221,17 @@
                             <Setter TargetName="ContentHost" Property="Grid.Row" Value="1" />
                             <Setter TargetName="ContentHost" Property="Grid.Column" Value="1" />
                             <Setter TargetName="ContentHost" Property="Grid.ColumnSpan" Value="2" />
+                            <Setter TargetName="CardLayout" Property="VerticalAlignment" Value="Top" />
                             <Setter TargetName="ContentHost" Property="Margin" Value="0,12,0,0" />
                             <Setter TargetName="ContentHost" Property="HorizontalAlignment" Value="Stretch" />
+                            <Setter TargetName="TextHost" Property="Margin" Value="0" />
+                        </Trigger>
+                        <Trigger Property="IsAutoStacked" Value="True">
+                            <Setter TargetName="ContentHost" Property="Grid.Row" Value="1" />
+                            <Setter TargetName="ContentHost" Property="Grid.Column" Value="1" />
+                            <Setter TargetName="ContentHost" Property="Grid.ColumnSpan" Value="2" />
+                            <Setter TargetName="ContentHost" Property="Margin" Value="0,10,0,0" />
+                            <Setter TargetName="ContentHost" Property="HorizontalAlignment" Value="Left" />
                             <Setter TargetName="TextHost" Property="Margin" Value="0" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">

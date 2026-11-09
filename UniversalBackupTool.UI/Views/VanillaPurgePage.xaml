@@ -13,41 +13,37 @@
     Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="1072" />
-            </Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource PageContentPanelStyle}">
+            <Grid Style="{StaticResource PageHeaderGridStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Vanilla &amp; Purge" />
+                    <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Record the clean state of a game folder, then remove everything that was added later." />
+                </StackPanel>
+            </Grid>
 
-            <StackPanel Style="{StaticResource PageContentPanelStyle}">
-                <Grid Style="{StaticResource PageHeaderGridStyle}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Vanilla &amp; Purge" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Record the clean state of a game folder, then remove everything that was added later." />
-                    </StackPanel>
-                </Grid>
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game" />
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game" />
+            <controls:SettingsCard
+                Description="{Binding GameRootPath, TargetNullValue='Only profiles with a game folder are listed.'}"
+                Header="Profile"
+                Icon="{ui:SymbolIcon Games24}">
+                <ComboBox
+                    Width="260"
+                    DisplayMemberPath="GameName"
+                    ItemsSource="{Binding Profiles}"
+                    SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" />
+            </controls:SettingsCard>
 
-                <controls:SettingsCard
-                    Description="{Binding GameRootPath, TargetNullValue='Only profiles with a game folder are listed.'}"
-                    Header="Profile"
-                    Icon="{ui:SymbolIcon Games24}">
-                    <ComboBox
-                        Width="260"
-                        DisplayMemberPath="GameName"
-                        ItemsSource="{Binding Profiles}"
-                        SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" />
-                </controls:SettingsCard>
+            <Border
+                Margin="0,0,0,4"
+                Style="{StaticResource CardBorderStyle}"
+                Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="No profile has a game folder yet. Add one on the Profiles page." />
+            </Border>
 
-                <Border
-                    Margin="0,0,0,4"
-                    Style="{StaticResource CardBorderStyle}"
-                    Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Style="{StaticResource CaptionTextStyle}" Text="No profile has a game folder yet. Add one on the Profiles page." />
-                </Border>
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Baseline snapshot" />
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Baseline snapshot" />
-
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="{Binding SnapshotStatus}"
                     Header="Vanilla snapshot"
@@ -69,9 +65,11 @@
                         Icon="{ui:SymbolIcon DocumentAdd24}"
                         IsEnabled="{Binding CanPurge}" />
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Purge" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Purge" />
 
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="Deletes files in the game folder that are not in the snapshot (configs, logs, manually installed mods). Every deleted file is saved to a safety backup first."
                     Header="Purge unregistered files"
@@ -111,65 +109,65 @@
                             IsEnabled="{Binding CanPurge}" />
                     </StackPanel>
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <Border
-                    Margin="0,0,0,4"
-                    Style="{StaticResource CardBorderStyle}"
-                    Visibility="{Binding HasPreviewSummary, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding PreviewSummary}" />
+            <Border
+                Margin="0,0,0,4"
+                Style="{StaticResource CardBorderStyle}"
+                Visibility="{Binding HasPreviewSummary, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding PreviewSummary}" />
 
-                        <!--
-                            Own scroll area with UI virtualization: only visible rows are created, so tens of thousands of
-                            paths stay smooth. CanContentScroll must be True on the inner ScrollViewer for virtualization;
-                            MaxHeight bounds it inside the page ScrollViewer. The wheel passes to the page at the edges.
-                        -->
-                        <ItemsControl
-                            MaxHeight="400"
-                            Margin="0,12,0,0"
-                            ItemsSource="{Binding PreviewFiles}"
-                            VirtualizingPanel.CacheLength="2,2"
-                            VirtualizingPanel.CacheLengthUnit="Page"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.ScrollUnit="Pixel"
-                            VirtualizingPanel.VirtualizationMode="Recycling"
-                            Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}">
-                            <ItemsControl.Template>
-                                <ControlTemplate TargetType="ItemsControl">
-                                    <Border
-                                        Padding="12,6"
-                                        Background="{DynamicResource ControlFillColorDefaultBrush}"
-                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{DynamicResource ControlCornerRadius}">
-                                        <ScrollViewer
-                                            helpers:NestedScrollBehavior.PassWheelAtEdges="True"
-                                            CanContentScroll="True"
-                                            Focusable="False"
-                                            HorizontalScrollBarVisibility="Disabled"
-                                            VerticalScrollBarVisibility="Auto">
-                                            <ItemsPresenter />
-                                        </ScrollViewer>
-                                    </Border>
-                                </ControlTemplate>
-                            </ItemsControl.Template>
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <VirtualizingStackPanel />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock
-                                        Margin="0,1"
-                                        Style="{StaticResource PathTextStyle}"
-                                        Text="{Binding}" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </Grid>
+                    <!--
+                        Own scroll area with UI virtualization: only visible rows are created, so tens of thousands of
+                        paths stay smooth. CanContentScroll must be True on the inner ScrollViewer for virtualization;
+                        MaxHeight bounds it inside the page ScrollViewer. The wheel passes to the page at the edges.
+                    -->
+                    <ItemsControl
+                        MaxHeight="{Binding Path=(helpers:AdaptiveLayout.ListMaxHeight), RelativeSource={RelativeSource Self}}"
+                        Margin="0,12,0,0"
+                        ItemsSource="{Binding PreviewFiles}"
+                        VirtualizingPanel.CacheLength="2,2"
+                        VirtualizingPanel.CacheLengthUnit="Page"
+                        VirtualizingPanel.IsVirtualizing="True"
+                        VirtualizingPanel.ScrollUnit="Pixel"
+                        VirtualizingPanel.VirtualizationMode="Recycling"
+                        Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.Template>
+                            <ControlTemplate TargetType="ItemsControl">
+                                <Border
+                                    Padding="12,6"
+                                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{DynamicResource ControlCornerRadius}">
+                                    <ScrollViewer
+                                        helpers:NestedScrollBehavior.PassWheelAtEdges="True"
+                                        CanContentScroll="True"
+                                        Focusable="False"
+                                        HorizontalScrollBarVisibility="Disabled"
+                                        VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock
+                                    Margin="0,1"
+                                    Style="{StaticResource PathTextStyle}"
+                                    Text="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
     </ScrollViewer>
 </Page>

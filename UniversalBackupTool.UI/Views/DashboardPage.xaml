@@ -19,107 +19,104 @@
     </Page.Resources>
 
     <ScrollViewer x:Name="PageScrollViewer" VerticalScrollBarVisibility="Auto">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="1072" />
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Style="{StaticResource PageContentPanelStyle}">
-                <Grid Style="{StaticResource PageHeaderGridStyle}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Game profiles" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Games, their Vortex staging and game folders, and extra folders to back up. The Vortex AppData folder is shared by all games and set in Settings." />
-                    </StackPanel>
-                    <StackPanel
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal">
-                        <ToggleButton IsChecked="{Binding IsCompactView, Mode=TwoWay}" ToolTip="Show only the game names, without their paths">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:SymbolIcon
-                                    Margin="0,0,8,0"
-                                    FontSize="16"
-                                    Symbol="RowTriple24" />
-                                <TextBlock Text="Compact view" />
-                            </StackPanel>
-                        </ToggleButton>
-                        <ui:Button
-                            Margin="8,0,0,0"
-                            Command="{Binding ToggleFindCommand}"
-                            Content="Find on other disk"
-                            Icon="{ui:SymbolIcon Search24}" />
-                        <ui:Button
-                            Margin="8,0,0,0"
-                            Appearance="Primary"
-                            Command="{Binding AddProfileCommand}"
-                            Content="Add profile"
-                            Icon="{ui:SymbolIcon Add24}" />
-                    </StackPanel>
-                </Grid>
-
-                <!--  Find on other disk  -->
-                <StackPanel Visibility="{Binding IsFindVisible, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Find on other disk" />
-
-                    <controls:SettingsCard
-                        Description="Pick one of the profile paths. The same path is searched on all other local disks."
-                        Header="Path to look for"
-                        Icon="{ui:SymbolIcon Search24}"
-                        IsStacked="True">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox
-                                    HorizontalAlignment="Stretch"
-                                    DisplayMemberPath="Display"
-                                    ItemsSource="{Binding FindablePaths}"
-                                    SelectedItem="{Binding SelectedFindPath, Mode=TwoWay}" />
-                                <ui:Button
-                                    Grid.Column="1"
-                                    Margin="8,0,0,0"
-                                    Command="{Binding FindOnOtherDisksCommand}"
-                                    Content="Find"
-                                    Icon="{ui:SymbolIcon Search24}" />
-                            </Grid>
-
-                            <TextBlock
-                                Margin="0,8,0,0"
-                                Style="{StaticResource CaptionTextStyle}"
-                                Text="{Binding FindMessage}"
-                                Visibility="{Binding HasFindMessage, Converter={StaticResource BoolToVisibility}}" />
-
-                            <Grid Margin="0,8,0,0" Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVisibility}}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox
-                                    HorizontalAlignment="Stretch"
-                                    ItemsSource="{Binding FoundCandidates}"
-                                    SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}" />
-                                <ui:Button
-                                    Grid.Column="1"
-                                    Margin="8,0,0,0"
-                                    Appearance="Primary"
-                                    Command="{Binding ApplyCandidateCommand}"
-                                    Content="Use this path and save"
-                                    Icon="{ui:SymbolIcon Save24}" />
-                            </Grid>
-                        </StackPanel>
-                    </controls:SettingsCard>
+        <StackPanel Style="{StaticResource PageContentPanelStyle}">
+            <Grid Style="{StaticResource PageHeaderGridStyle}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Game profiles" />
+                    <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Games, their Vortex staging and game folders, and extra folders to back up. The Vortex AppData folder is shared by all games and set in Settings." />
                 </StackPanel>
+                <StackPanel Style="{StaticResource PageHeaderCommandsStyle}">
+                    <ToggleButton IsChecked="{Binding IsCompactView, Mode=TwoWay}" ToolTip="Show only the game names, without their paths">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon
+                                Margin="0,0,8,0"
+                                FontSize="16"
+                                Symbol="RowTriple24" />
+                            <TextBlock Text="Compact view" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ui:Button
+                        Margin="8,0,0,0"
+                        Command="{Binding ToggleFindCommand}"
+                        Content="Find on other disk"
+                        Icon="{ui:SymbolIcon Search24}" />
+                    <ui:Button
+                        Margin="8,0,0,0"
+                        Appearance="Primary"
+                        Command="{Binding AddProfileCommand}"
+                        Content="Add profile"
+                        Icon="{ui:SymbolIcon Add24}" />
+                </StackPanel>
+            </Grid>
 
-                <!--  Profile editor  -->
-                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding EditorTitle}" />
+            <!--  Find on other disk  -->
+            <StackPanel Visibility="{Binding IsFindVisible, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Find on other disk" />
 
+                <controls:SettingsCard
+                    Description="Pick one of the profile paths. The same path is searched on all other local disks."
+                    Header="Path to look for"
+                    Icon="{ui:SymbolIcon Search24}"
+                    IsStacked="True">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                HorizontalAlignment="Stretch"
+                                DisplayMemberPath="Display"
+                                ItemsSource="{Binding FindablePaths}"
+                                SelectedItem="{Binding SelectedFindPath, Mode=TwoWay}" />
+                            <ui:Button
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Command="{Binding FindOnOtherDisksCommand}"
+                                Content="Find"
+                                Icon="{ui:SymbolIcon Search24}" />
+                        </Grid>
+
+                        <TextBlock
+                            Margin="0,8,0,0"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="{Binding FindMessage}"
+                            Visibility="{Binding HasFindMessage, Converter={StaticResource BoolToVisibility}}" />
+
+                        <Grid Margin="0,8,0,0" Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding FoundCandidates}"
+                                SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}" />
+                            <ui:Button
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Appearance="Primary"
+                                Command="{Binding ApplyCandidateCommand}"
+                                Content="Use this path and save"
+                                Icon="{ui:SymbolIcon Save24}" />
+                        </Grid>
+                    </StackPanel>
+                </controls:SettingsCard>
+            </StackPanel>
+
+            <!--  Profile editor  -->
+            <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding EditorTitle}" />
+
+                <controls:AdaptiveColumnsPanel>
                     <controls:SettingsCard
                         Description="Used for the backup folder name."
                         Header="Game name"
@@ -325,154 +322,159 @@
                             OffContent="Off"
                             OnContent="On" />
                     </controls:SettingsCard>
+                </controls:AdaptiveColumnsPanel>
 
-                    <StackPanel Style="{StaticResource ActionBarPanelStyle}">
-                        <ui:Button Command="{Binding CancelEditCommand}" Content="Cancel" />
-                        <ui:Button
-                            Margin="8,0,0,0"
-                            Appearance="Primary"
-                            Command="{Binding SaveProfileCommand}"
-                            Content="Save profile"
-                            Icon="{ui:SymbolIcon Save24}" />
-                    </StackPanel>
+                <StackPanel Style="{StaticResource ActionBarPanelStyle}">
+                    <ui:Button Command="{Binding CancelEditCommand}" Content="Cancel" />
+                    <ui:Button
+                        Margin="8,0,0,0"
+                        Appearance="Primary"
+                        Command="{Binding SaveProfileCommand}"
+                        Content="Save profile"
+                        Icon="{ui:SymbolIcon Save24}" />
                 </StackPanel>
-
-                <!--  Profiles  -->
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Profiles" />
-
-                <Border Style="{StaticResource CardBorderStyle}" Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Style="{StaticResource CaptionTextStyle}" Text="No profiles yet. Select &quot;Add profile&quot; to create one." />
-                </Border>
-
-                <ItemsControl ItemsSource="{Binding Profiles}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border
-                                Margin="0,0,0,4"
-                                Padding="0"
-                                Style="{StaticResource CardBorderStyle}">
-                                <StackPanel>
-                                    <Grid Margin="16,12,16,12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon
-                                            Margin="2,0,20,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="20"
-                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                            Symbol="Games24" />
-                                        <StackPanel
-                                            Grid.Column="1"
-                                            VerticalAlignment="Center"
-                                            Orientation="Horizontal">
-                                            <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding GameName}" />
-                                            <TextBlock
-                                                Margin="10,0,0,0"
-                                                VerticalAlignment="Center"
-                                                Style="{StaticResource CaptionTextStyle}"
-                                                Text="without Vortex"
-                                                Visibility="{Binding UsesVortex, Converter={StaticResource InverseBoolToVisibility}}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                            <Button
-                                                Command="{Binding DataContext.EditProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                                CommandParameter="{Binding}"
-                                                Content="Edit" />
-                                            <Button
-                                                Margin="8,0,0,0"
-                                                Command="{Binding DataContext.DeleteProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                                CommandParameter="{Binding}"
-                                                Content="Delete" />
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <Border
-                                        Padding="58,10,16,14"
-                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="0,1,0,0"
-                                        Visibility="{Binding DataContext.IsCompactView, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}">
-                                        <StackPanel>
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexStagingPath, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Vortex staging" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource PathTextStyle}"
-                                                    Text="{Binding VortexStagingPath}" />
-                                            </Grid>
-
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasGameRootPath, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Game folder" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource PathTextStyle}"
-                                                    Text="{Binding GameRootPath}" />
-                                            </Grid>
-
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasCustomFolders, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Custom paths" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource PathTextStyle}"
-                                                    Text="{Binding CustomFoldersText}"
-                                                    TextTrimming="None"
-                                                    TextWrapping="Wrap" />
-                                            </Grid>
-
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasFullGameExportFolder, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Full game export" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource PathTextStyle}"
-                                                    Text="{Binding FullGameExportFolder}" />
-                                            </Grid>
-
-                                            <Grid Style="{StaticResource ProfileFieldGridStyle}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Configs ignore list" />
-                                                <TextBlock Grid.Column="1">
-                                                    <TextBlock.Style>
-                                                        <Style BasedOn="{StaticResource CaptionTextStyle}" TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                                                            <Setter Property="Text" Value="Used" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding UseIgnoreList}" Value="False">
-                                                                    <Setter Property="Text" Value="Not used" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
             </StackPanel>
-        </Grid>
+
+            <!--  Profiles  -->
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Profiles" />
+
+            <Border Style="{StaticResource CardBorderStyle}" Visibility="{Binding HasNoProfiles, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource CaptionTextStyle}" Text="No profiles yet. Select &quot;Add profile&quot; to create one." />
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding Profiles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <controls:AdaptiveColumnsPanel MaxColumns="3" MinColumnWidth="560" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border
+                            Margin="0,0,0,4"
+                            Padding="0"
+                            Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <Grid Margin="16,12,16,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon
+                                        Margin="2,0,20,0"
+                                        VerticalAlignment="Center"
+                                        FontSize="20"
+                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                        Symbol="Games24" />
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="{Binding GameName}" />
+                                        <TextBlock
+                                            Margin="10,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource CaptionTextStyle}"
+                                            Text="without Vortex"
+                                            Visibility="{Binding UsesVortex, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <Button
+                                            Command="{Binding DataContext.EditProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                            CommandParameter="{Binding}"
+                                            Content="Edit" />
+                                        <Button
+                                            Margin="8,0,0,0"
+                                            Command="{Binding DataContext.DeleteProfileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                            CommandParameter="{Binding}"
+                                            Content="Delete" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border
+                                    Padding="58,10,16,14"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Visibility="{Binding DataContext.IsCompactView, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}">
+                                    <StackPanel>
+                                        <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasVortexStagingPath, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Vortex staging" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Style="{StaticResource PathTextStyle}"
+                                                Text="{Binding VortexStagingPath}" />
+                                        </Grid>
+
+                                        <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasGameRootPath, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Game folder" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Style="{StaticResource PathTextStyle}"
+                                                Text="{Binding GameRootPath}" />
+                                        </Grid>
+
+                                        <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasCustomFolders, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Custom paths" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Style="{StaticResource PathTextStyle}"
+                                                Text="{Binding CustomFoldersText}"
+                                                TextTrimming="None"
+                                                TextWrapping="Wrap" />
+                                        </Grid>
+
+                                        <Grid Style="{StaticResource ProfileFieldGridStyle}" Visibility="{Binding HasFullGameExportFolder, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Full game export" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Style="{StaticResource PathTextStyle}"
+                                                Text="{Binding FullGameExportFolder}" />
+                                        </Grid>
+
+                                        <Grid Style="{StaticResource ProfileFieldGridStyle}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource CaptionTextStyle}" Text="Configs ignore list" />
+                                            <TextBlock Grid.Column="1">
+                                                <TextBlock.Style>
+                                                    <Style BasedOn="{StaticResource CaptionTextStyle}" TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                        <Setter Property="Text" Value="Used" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding UseIgnoreList}" Value="False">
+                                                                <Setter Property="Text" Value="Not used" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
     </ScrollViewer>
 </Page>

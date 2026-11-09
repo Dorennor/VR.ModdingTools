@@ -24,21 +24,17 @@
     </Page.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="1072" />
-            </Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource PageContentPanelStyle}">
+            <Grid Style="{StaticResource PageHeaderGridStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Restore" />
+                    <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Choose a game, then the backup to bring back." />
+                </StackPanel>
+            </Grid>
 
-            <StackPanel Style="{StaticResource PageContentPanelStyle}">
-                <Grid Style="{StaticResource PageHeaderGridStyle}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Restore" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Choose a game, then the backup to bring back." />
-                    </StackPanel>
-                </Grid>
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game" />
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game" />
-
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="Lists the backups of this game in the backup destination from Settings."
                     Header="Game"
@@ -60,66 +56,73 @@
                         Icon="{ui:SymbolIcon FolderOpen24}"
                         IsEnabled="{Binding IsIdle}" />
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <!--  Status of the list: nothing chosen, still looking, or nothing found.  -->
-                <Border
-                    Margin="0,12,0,0"
-                    Style="{StaticResource CardBorderStyle}"
-                    Visibility="{Binding HasBackupListMessage, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock
-                        Style="{StaticResource CaptionTextStyle}"
-                        Text="{Binding BackupListMessage}"
-                        TextWrapping="Wrap" />
-                </Border>
+            <!--  Status of the list: nothing chosen, still looking, or nothing found.  -->
+            <Border
+                Margin="0,12,0,0"
+                Style="{StaticResource CardBorderStyle}"
+                Visibility="{Binding HasBackupListMessage, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock
+                    Style="{StaticResource CaptionTextStyle}"
+                    Text="{Binding BackupListMessage}"
+                    TextWrapping="Wrap" />
+            </Border>
 
-                <!--  The dated backup folders of the game, per component, newest first.  -->
-                <ItemsControl ItemsSource="{Binding BackupGroups}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding Title}" />
-                                <ItemsControl ItemsSource="{Binding Backups}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border
-                                                Margin="0,0,0,4"
-                                                Padding="16,10"
-                                                Style="{StaticResource CardBorderStyle}"
-                                                ToolTip="{Binding Folder}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Style="{StaticResource BodyTextStyle}" Text="{Binding CreatedText}" />
-                                                        <TextBlock
-                                                            Margin="0,2,0,0"
-                                                            Style="{StaticResource CaptionTextStyle}"
-                                                            Text="{Binding PartsText}" />
-                                                    </StackPanel>
-                                                    <ui:Button
-                                                        Grid.Column="1"
-                                                        Margin="12,0,0,0"
-                                                        Command="{Binding DataContext.SelectBackupCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="Restore from this"
-                                                        Icon="{ui:SymbolIcon History24}"
-                                                        IsEnabled="{Binding DataContext.CanStartOperation, RelativeSource={RelativeSource AncestorType=Page}}" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+            <!--  The dated backup folders of the game, per component, newest first.  -->
+            <ItemsControl ItemsSource="{Binding BackupGroups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding Title}" />
+                            <ItemsControl ItemsSource="{Binding Backups}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <controls:AdaptiveColumnsPanel MaxColumns="3" MinColumnWidth="440" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border
+                                            Margin="0,0,0,4"
+                                            Padding="16,10"
+                                            Style="{StaticResource CardBorderStyle}"
+                                            ToolTip="{Binding Folder}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Style="{StaticResource BodyTextStyle}" Text="{Binding CreatedText}" />
+                                                    <TextBlock
+                                                        Margin="0,2,0,0"
+                                                        Style="{StaticResource CaptionTextStyle}"
+                                                        Text="{Binding PartsText}" />
+                                                </StackPanel>
+                                                <ui:Button
+                                                    Grid.Column="1"
+                                                    Margin="12,0,0,0"
+                                                    Command="{Binding DataContext.SelectBackupCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                    CommandParameter="{Binding}"
+                                                    Content="Restore from this"
+                                                    Icon="{ui:SymbolIcon History24}"
+                                                    IsEnabled="{Binding DataContext.CanStartOperation, RelativeSource={RelativeSource AncestorType=Page}}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
-                <!--  Options of the backup chosen above; the page scrolls here when one is chosen.  -->
-                <StackPanel x:Name="RestoreOptionsPanel" Visibility="{Binding HasRestoreManifest, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding RestoreSummary, StringFormat='Restore from: {0}'}" />
+            <!--  Options of the backup chosen above; the page scrolls here when one is chosen.  -->
+            <StackPanel x:Name="RestoreOptionsPanel" Visibility="{Binding HasRestoreManifest, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="{Binding RestoreSummary, StringFormat='Restore from: {0}'}" />
 
+                <controls:AdaptiveColumnsPanel>
                     <controls:SettingsCard
                         Description="Mod folders from the staging snapshot."
                         Header="Staging folders"
@@ -221,43 +224,43 @@
                                 OnContent="On" />
                         </StackPanel>
                     </controls:SettingsCard>
+                </controls:AdaptiveColumnsPanel>
 
-                    <Border Margin="0,0,0,4" Style="{StaticResource CardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="Will be restored to" />
-                            <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding RestorePlanLines}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock
-                                            Margin="0,2"
-                                            Style="{StaticResource CaptionTextStyle}"
-                                            Text="{Binding}" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <TextBlock
-                                Margin="0,10,0,0"
-                                Style="{StaticResource CaptionTextStyle}"
-                                Text="{Binding RestoreFolderPath, StringFormat='Source: {0}'}" />
-                        </StackPanel>
-                    </Border>
-
-                    <StackPanel Style="{StaticResource ActionBarPanelStyle}">
-                        <ui:Button
-                            Appearance="Danger"
-                            Command="{Binding RestoreCommand}"
-                            Content="Restore selected"
-                            Icon="{ui:SymbolIcon ArrowDownload24}"
-                            IsEnabled="{Binding CanStartOperation}" />
+                <Border Margin="0,0,0,4" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource BodyStrongTextStyle}" Text="Will be restored to" />
+                        <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding RestorePlanLines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock
+                                        Margin="0,2"
+                                        Style="{StaticResource CaptionTextStyle}"
+                                        Text="{Binding}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock
+                            Margin="0,10,0,0"
+                            Style="{StaticResource CaptionTextStyle}"
+                            Text="{Binding RestoreFolderPath, StringFormat='Source: {0}'}" />
                     </StackPanel>
-                </StackPanel>
+                </Border>
 
-                <TextBlock
-                    Margin="1,16,0,0"
-                    Style="{StaticResource CaptionTextStyle}"
-                    Text="Backups waiting for Continue Backup are listed once they are complete. Files that a restore would overwrite are saved to a safety backup first. When moving backups, keep each component's _archives folder next to its dated snapshot folders: snapshots share the archives stored there."
-                    TextWrapping="Wrap" />
+                <StackPanel Style="{StaticResource ActionBarPanelStyle}">
+                    <ui:Button
+                        Appearance="Danger"
+                        Command="{Binding RestoreCommand}"
+                        Content="Restore selected"
+                        Icon="{ui:SymbolIcon ArrowDownload24}"
+                        IsEnabled="{Binding CanStartOperation}" />
+                </StackPanel>
             </StackPanel>
-        </Grid>
+
+            <TextBlock
+                Margin="1,16,0,0"
+                Style="{StaticResource CaptionTextStyle}"
+                Text="Backups waiting for Continue Backup are listed once they are complete. Files that a restore would overwrite are saved to a safety backup first. When moving backups, keep each component's _archives folder next to its dated snapshot folders: snapshots share the archives stored there."
+                TextWrapping="Wrap" />
+        </StackPanel>
     </ScrollViewer>
 </Page>

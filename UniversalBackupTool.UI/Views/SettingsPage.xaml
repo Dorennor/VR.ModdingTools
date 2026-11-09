@@ -12,46 +12,46 @@
     Style="{StaticResource AppPageStyle}"
     mc:Ignorable="d">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="1072" />
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Style="{StaticResource PageContentPanelStyle}">
-                <Grid Style="{StaticResource PageHeaderGridStyle}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Settings" />
-                        <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Backup destination, compression, retention and ignore rules." />
-                    </StackPanel>
+        <StackPanel Style="{StaticResource PageContentPanelStyle}">
+            <Grid Style="{StaticResource PageHeaderGridStyle}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="Settings" />
+                    <TextBlock Style="{StaticResource PageDescriptionTextStyle}" Text="Backup destination, compression, retention and ignore rules." />
+                </StackPanel>
+                <StackPanel Style="{StaticResource PageHeaderCommandsStyle}">
                     <ui:Button
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         Appearance="Primary"
                         Command="{Binding SaveCommand}"
                         Content="Save settings"
                         Icon="{ui:SymbolIcon Save24}" />
-                </Grid>
+                </StackPanel>
+            </Grid>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Appearance" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Appearance" />
 
-                <controls:SettingsCard
-                    Description="Light or dark, or follow the Windows setting. Applied and saved immediately."
-                    Header="App theme"
-                    Icon="{ui:SymbolIcon Color24}">
-                    <ComboBox
-                        Width="220"
-                        DisplayMemberPath="DisplayName"
-                        ItemsSource="{Binding ThemeOptions}"
-                        SelectedValue="{Binding SelectedTheme, Mode=TwoWay}"
-                        SelectedValuePath="Theme" />
-                </controls:SettingsCard>
+            <controls:SettingsCard
+                Description="Light or dark, or follow the Windows setting. Applied and saved immediately."
+                Header="App theme"
+                Icon="{ui:SymbolIcon Color24}">
+                <ComboBox
+                    Width="220"
+                    DisplayMemberPath="DisplayName"
+                    ItemsSource="{Binding ThemeOptions}"
+                    SelectedValue="{Binding SelectedTheme, Mode=TwoWay}"
+                    SelectedValuePath="Theme" />
+            </controls:SettingsCard>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Storage" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Storage" />
 
+            <controls:AdaptiveColumnsPanel MaxColumns="3" MinColumnWidth="460">
                 <controls:SettingsCard
                     Description="Root folder for all backups, for example a Google Drive folder. Each game gets its own sub-folder."
                     Header="Backup destination"
@@ -111,115 +111,122 @@
                             Icon="{ui:SymbolIcon FolderOpen24}" />
                     </Grid>
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Compression" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Compression" />
 
-                <controls:SettingsCard
-                    Description="Disable compression for large files to speed up backups. Each file uses the smallest matching size limit."
-                    Header="Compression rules"
-                    Icon="{ui:SymbolIcon ArchiveSettings24}">
-                    <ui:Button
-                        Command="{Binding AddRuleCommand}"
-                        Content="Add rule"
-                        Icon="{ui:SymbolIcon Add24}" />
-                </controls:SettingsCard>
+            <controls:SettingsCard
+                Description="Disable compression for large files to speed up backups. Each file uses the smallest matching size limit."
+                Header="Compression rules"
+                Icon="{ui:SymbolIcon ArchiveSettings24}">
+                <ui:Button
+                    Command="{Binding AddRuleCommand}"
+                    Content="Add rule"
+                    Icon="{ui:SymbolIcon Add24}" />
+            </controls:SettingsCard>
 
-                <ItemsControl ItemsSource="{Binding CompressionRules}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border
-                                Margin="0,0,0,4"
-                                Padding="56,8,16,8"
-                                Style="{StaticResource CardBorderStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+            <ItemsControl ItemsSource="{Binding CompressionRules}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <controls:AdaptiveColumnsPanel MaxColumns="2" MinColumnWidth="520" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border
+                            Margin="0,0,0,4"
+                            Padding="56,8,16,8"
+                            Style="{StaticResource CardBorderStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-                                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            Style="{StaticResource BodyTextStyle}"
-                                            Text="Files up to" />
-                                        <ui:NumberBox
-                                            Width="120"
-                                            Margin="12,0"
-                                            MaxDecimalPlaces="0"
-                                            Minimum="1"
-                                            SpinButtonPlacementMode="Hidden"
-                                            Value="{Binding MaxSizeMegabytes, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            Style="{StaticResource BodyTextStyle}"
-                                            Text="MB" />
-                                    </StackPanel>
-
-                                    <TextBlock VerticalAlignment="Center" Text="Larger files (no upper limit)">
-                                        <TextBlock.Style>
-                                            <Style BasedOn="{StaticResource BodyTextStyle}" TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-
-                                    <ComboBox
-                                        Grid.Column="1"
-                                        Width="180"
+                                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock
                                         VerticalAlignment="Center"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding Options}"
-                                        SelectedValue="{Binding Level, Mode=TwoWay}"
-                                        SelectedValuePath="Level" />
-
-                                    <Button
-                                        Grid.Column="2"
-                                        Width="36"
-                                        Height="32"
-                                        Margin="8,0,0,0"
-                                        Padding="0"
+                                        Style="{StaticResource BodyTextStyle}"
+                                        Text="Files up to" />
+                                    <ui:NumberBox
+                                        Width="120"
+                                        Margin="12,0"
+                                        MaxDecimalPlaces="0"
+                                        Minimum="1"
+                                        SpinButtonPlacementMode="Hidden"
+                                        Value="{Binding MaxSizeMegabytes, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock
                                         VerticalAlignment="Center"
-                                        Command="{Binding DataContext.RemoveRuleCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                        CommandParameter="{Binding}"
-                                        ToolTip="Remove rule">
-                                        <ui:SymbolIcon FontSize="16" Symbol="Delete24" />
-                                    </Button>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                        Style="{StaticResource BodyTextStyle}"
+                                        Text="MB" />
+                                </StackPanel>
 
-                <controls:SettingsCard
-                    Description="File types that are compressed already (archives, BA2, audio, video, images). They are always stored without compression, whatever their size: compressing them costs time and saves almost nothing. One extension per line, for example .ba2."
-                    Header="File types stored without compression"
-                    Icon="{ui:SymbolIcon DocumentArrowRight24}"
-                    IsStacked="True">
-                    <ui:TextBox
-                        Height="120"
-                        AcceptsReturn="True"
-                        FontFamily="{StaticResource MonospaceFontFamily}"
-                        FontSize="13"
-                        Text="{Binding NoCompressionExtensionsText, UpdateSourceTrigger=PropertyChanged}"
-                        TextWrapping="NoWrap"
-                        VerticalScrollBarVisibility="Auto" />
-                </controls:SettingsCard>
+                                <TextBlock VerticalAlignment="Center" Text="Larger files (no upper limit)">
+                                    <TextBlock.Style>
+                                        <Style BasedOn="{StaticResource BodyTextStyle}" TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsUnlimited}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
 
+                                <ComboBox
+                                    Grid.Column="1"
+                                    Width="180"
+                                    VerticalAlignment="Center"
+                                    DisplayMemberPath="DisplayName"
+                                    ItemsSource="{Binding Options}"
+                                    SelectedValue="{Binding Level, Mode=TwoWay}"
+                                    SelectedValuePath="Level" />
+
+                                <Button
+                                    Grid.Column="2"
+                                    Width="36"
+                                    Height="32"
+                                    Margin="8,0,0,0"
+                                    Padding="0"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding DataContext.RemoveRuleCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="Remove rule">
+                                    <ui:SymbolIcon FontSize="16" Symbol="Delete24" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <controls:SettingsCard
+                Description="File types that are compressed already (archives, BA2, audio, video, images). They are always stored without compression, whatever their size: compressing them costs time and saves almost nothing. One extension per line, for example .ba2."
+                Header="File types stored without compression"
+                Icon="{ui:SymbolIcon DocumentArrowRight24}"
+                IsStacked="True">
+                <ui:TextBox
+                    Height="120"
+                    AcceptsReturn="True"
+                    FontFamily="{StaticResource MonospaceFontFamily}"
+                    FontSize="13"
+                    Text="{Binding NoCompressionExtensionsText, UpdateSourceTrigger=PropertyChanged}"
+                    TextWrapping="NoWrap"
+                    VerticalScrollBarVisibility="Auto" />
+            </controls:SettingsCard>
+
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="When all files of one backup component of a game together are larger than this (for staging: the whole modpack), every file is stored without compression. 0 turns this off."
                     Header="Store large components without compression"
@@ -259,9 +266,11 @@
                             Text="archives" />
                     </StackPanel>
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Retention" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Retention" />
 
+            <controls:AdaptiveColumnsPanel>
                 <controls:SettingsCard
                     Description="Automatic safety backups older than this are deleted at startup."
                     Header="Keep safety backups"
@@ -301,24 +310,24 @@
                             Text="snapshots" />
                     </StackPanel>
                 </controls:SettingsCard>
+            </controls:AdaptiveColumnsPanel>
 
-                <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game configs" />
+            <TextBlock Style="{StaticResource SectionHeaderTextStyle}" Text="Game configs" />
 
-                <controls:SettingsCard
-                    Description="Game-folder files that are not mod leftovers or configs worth keeping. Used only for Game configs (backup and restore); staging, Vortex AppData and custom paths are always backed up completely, and Purge ignores this list. One gitignore-style pattern per line, for example *.log, CrashDumps/ or logs/*.txt."
-                    Header="Game configs ignore patterns"
-                    Icon="{ui:SymbolIcon Filter24}"
-                    IsStacked="True">
-                    <ui:TextBox
-                        Height="120"
-                        AcceptsReturn="True"
-                        FontFamily="{StaticResource MonospaceFontFamily}"
-                        FontSize="13"
-                        Text="{Binding GlobalIgnorePatternsText, UpdateSourceTrigger=PropertyChanged}"
-                        TextWrapping="NoWrap"
-                        VerticalScrollBarVisibility="Auto" />
-                </controls:SettingsCard>
-            </StackPanel>
-        </Grid>
+            <controls:SettingsCard
+                Description="Game-folder files that are not mod leftovers or configs worth keeping. Used only for Game configs (backup and restore); staging, Vortex AppData and custom paths are always backed up completely, and Purge ignores this list. One gitignore-style pattern per line, for example *.log, CrashDumps/ or logs/*.txt."
+                Header="Game configs ignore patterns"
+                Icon="{ui:SymbolIcon Filter24}"
+                IsStacked="True">
+                <ui:TextBox
+                    Height="120"
+                    AcceptsReturn="True"
+                    FontFamily="{StaticResource MonospaceFontFamily}"
+                    FontSize="13"
+                    Text="{Binding GlobalIgnorePatternsText, UpdateSourceTrigger=PropertyChanged}"
+                    TextWrapping="NoWrap"
+                    VerticalScrollBarVisibility="Auto" />
+            </controls:SettingsCard>
+        </StackPanel>
     </ScrollViewer>
 </Page>
