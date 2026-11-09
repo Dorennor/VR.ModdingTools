@@ -13,6 +13,7 @@ namespace UniversalBackupTool.UI.Controls
     {
         /// <summary>Padding, icon column and the gap before the content.</summary>
         private const double CardChromeWidth = 90;
+
         private const double MinTextWidth = 260;
 
         private FrameworkElement? _contentHost;
