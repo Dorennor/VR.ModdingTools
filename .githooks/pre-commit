@@ -1,0 +1,33 @@
+#!/bin/sh
+# Automatic version bump (see Documentation/Version_History.md).
+# Enable once per clone: git config core.hooksPath .githooks
+#
+# Every commit raises the patch number of <Version> in Directory.Build.props: 0.19.1 -> 0.19.2.
+# A commit that already changes <Version> itself (a manual minor bump for a big change, 0.19.1 -> 0.20.0)
+# is left alone. The bump is written to the staged file and to the working copy, so other unstaged
+# edits of Directory.Build.props are not swept into the commit.
+props=Directory.Build.props
+git cat-file -e ":$props" 2>/dev/null || exit 0
+
+if git diff --cached -U0 -- "$props" | grep -q '^[-+].*<Version>'; then
+    exit 0
+fi
+
+current=$(git show ":$props" | sed -n 's/.*<Version>\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)<\/Version>.*/\1/p' | head -n 1)
+[ -n "$current" ] || exit 0
+
+major=${current%%.*}
+rest=${current#*.}
+minor=${rest%%.*}
+patch=${rest#*.}
+next="$major.$minor.$((patch + 1))"
+
+pattern="<Version>$(printf '%s' "$current" | sed 's/\./\\./g')<\/Version>"
+replacement="<Version>$next<\/Version>"
+
+mode=$(git ls-files -s -- "$props" | cut -d ' ' -f 1)
+blob=$(git show ":$props" | sed "s/$pattern/$replacement/" | git hash-object -w --stdin) || exit 1
+git update-index --cacheinfo "$mode,$blob,$props" || exit 1
+sed -i "s/$pattern/$replacement/" "$props"
+
+echo "Version $current -> $next"
