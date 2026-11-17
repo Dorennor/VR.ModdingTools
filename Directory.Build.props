@@ -6,7 +6,7 @@
     version here yourself (0.19.4 -> 0.20.0) in the same commit, and the hook leaves it alone.
   -->
   <PropertyGroup>
-    <Version>0.19.2</Version>
+    <Version>0.19.3</Version>
   </PropertyGroup>
 
   <!--
